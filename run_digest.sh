@@ -1,16 +1,13 @@
 #!/bin/bash
 
 # AI Daily Digest Cron Script
-# 每日早上5点自动运行并发送到Discord和Obsidian
+# 每日早上7点自动运行并发送到Discord和Obsidian
 
 export PATH="$HOME/.bun/bin:$PATH"
-# export OPENAI_API_KEY="sk-cp-vl-MpJmiJDVFWDMv84CL5VX0OE6m4QQInYjkBoh2qURq7e-0JaD-kxpzTJg3WmX5FL_Rf_eXCCmNZmYez9YEeOuBBeCTZcUIVxkZccO2Pd6GqK1fJmEYGyU"
-# export OPENAI_API_BASE="https://api.minimaxi.com/v1"
-# export OPENAI_MODEL="MiniMax-M2.5"
 
-export OPENAI_API_KEY="sk-sp-9dfa7de313c04f849add58c228e895de"
-export OPENAI_API_BASE="https://coding.dashscope.aliyuncs.com/v1"
-export OPENAI_MODEL="kimi-k2.5"
+export OPENAI_API_KEY="sk-sp-xxx"
+export OPENAI_API_BASE="https://openai.com/v1"
+export OPENAI_MODEL="gpt-4o-mini"
 
 cd /Users/zhou/Documents/PycharmProject/ai-daily-digest
 
@@ -33,5 +30,5 @@ if [ -f "$OUTPUT_FILE" ]; then
     mv "$OUTPUT_FILE" "$OBSIDIAN_PATH"    
     
     # 发送消息到feishu
-    openclaw message send --channel feishu --target "ou_fb62627e866640f7b27ee26f38f7cc3b" --message "📰 **AI Daily Digest - ${DATE}**\n\n${content}...\n\n*完整报告已保存到Obsidian: Clippings/${DATE}-RSS简报.md*" 2>&1
+    openclaw message send --channel feishu --target "ou_xxx" --message "📰 **AI Daily Digest - ${DATE}**\n\n${content}...\n\n*完整报告已保存到Obsidian: Clippings/${DATE}-RSS简报.md*" 2>&1
 fi

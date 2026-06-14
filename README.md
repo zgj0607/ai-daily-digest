@@ -1,7 +1,5 @@
 # AI Daily Digest
 
-skill 制作详情可查看 ➡️ https://mp.weixin.qq.com/s/rkQ28KTZs5QeZqjwSCvR4Q
-
 从 [Andrej Karpathy](https://x.com/karpathy) 推荐的 90 个 Hacker News 顶级技术博客中抓取最新文章，通过 AI 多维评分筛选，生成一份结构化的每日精选日报。默认使用 Gemini，并支持自动降级到 OpenAI 兼容 API。
 
 ![AI Daily Digest 概览](assets/overview.png)
@@ -9,12 +7,14 @@ skill 制作详情可查看 ➡️ https://mp.weixin.qq.com/s/rkQ28KTZs5QeZqjwSC
 > 信息源来自 [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/)，涵盖 simonwillison.net、paulgraham.com、overreacted.io、gwern.net、krebsonsecurity.com 等。
 
 ## 使用方式
+1. 将整个github的代码下载到本地，其中的`run_digest.sh`、`rss.txt`、`script/digest.ts`，是核心文件。我自己使用OpenClaw配置crons，定时执行`run_digest.sh`脚本即可。
 
-作为 OpenCode Skill 使用，在对话中输入 `/digest` 即可启动交互式引导流程：
+大模型的配置在`run_digest.sh`文件中，修改为自己的配置即可。
 
-```
-/digest
-```
+2. 或者直接将Github链接发给Agent(Codex、Claude Code、Cursor、OpenClaw)，然后让Agent直接作为技能安装到本地，并设置定时任务即可。
+
+3. 阮一峰的博客是周更，不断会有新的个人博客出现，可以隔断时间再执行`scraper`文件夹下的`01-ruanyf_blog_scraper.py`和`02-extract_ruanyifeng_blogs.py`两个文件，最终更新到`rss.txt`中。
+
 
 Agent 会依次询问：
 

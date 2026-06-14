@@ -5,7 +5,7 @@ description: "Fetches RSS feeds from 90 top Hacker News blogs (curated by Karpat
 
 # AI Daily Digest
 
-从 Karpathy 推荐的 90 个热门技术博客中抓取最新文章，通过 AI 评分筛选，生成每日精选摘要。
+从 Karpathy 推荐的 90 个热门技术博客+阮一峰博客中的精选个人博客，抓取最新文章，通过 AI 评分筛选，生成每日精选摘要。
 
 ## 命令
 
