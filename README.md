@@ -13,7 +13,7 @@
 
 2. 或者直接将Github链接发给Agent(Codex、Claude Code、Cursor、OpenClaw)，然后让Agent直接作为技能安装到本地，并设置定时任务即可。
 
-3. 阮一峰的博客是周更，不断会有新的个人博客出现，可以隔断时间再执行`scraper`文件夹下的`01-ruanyf_blog_scraper.py`和`02-extract_ruanyifeng_blogs.py`两个文件，最终更新到`rss.txt`中。
+3. 阮一峰的博客是周更，不断会有新的个人博客出现，可以隔段时间执行 `scraper/sync_ruanyifeng_rss.py`，脚本会增量更新 `weekly_urls.json`、`ruanyifeng_blogs.csv`，并同步生成 `rss.txt`。
 
 
 Agent 会依次询问：

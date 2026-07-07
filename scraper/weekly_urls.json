@@ -1,1931 +1,2011 @@
 [
   {
     "issue": 1,
+    "title": "科技爱好者周刊（第 402 期）：我在智念 AI 的日子（小说）",
+    "url": "https://www.ruanyifeng.com/blog/2026/07/weekly-issue-402.html"
+  },
+  {
+    "issue": 2,
+    "title": "科技爱好者周刊（第 401 期）：如何赚到10亿美元",
+    "url": "https://www.ruanyifeng.com/blog/2026/06/weekly-issue-401.html"
+  },
+  {
+    "issue": 3,
+    "title": "科技爱好者周刊（第 400 期）：rsync 的争论",
+    "url": "https://www.ruanyifeng.com/blog/2026/06/weekly-issue-400.html"
+  },
+  {
+    "issue": 4,
+    "title": "科技爱好者周刊（第 399 期）：中国 AI 大厂访问记",
+    "url": "https://www.ruanyifeng.com/blog/2026/06/weekly-issue-399.html"
+  },
+  {
+    "issue": 5,
+    "title": "科技爱好者周刊（第 398 期）：Token 费用难以负担",
+    "url": "https://www.ruanyifeng.com/blog/2026/05/weekly-issue-398.html"
+  },
+  {
+    "issue": 6,
+    "title": "科技爱好者周刊（第 397 期）：财富正在向 AI 集中",
+    "url": "https://www.ruanyifeng.com/blog/2026/05/weekly-issue-397.html"
+  },
+  {
+    "issue": 7,
+    "title": "科技爱好者周刊（第 396 期）：互联网通信的替代方案",
+    "url": "https://www.ruanyifeng.com/blog/2026/05/weekly-issue-396.html"
+  },
+  {
+    "issue": 8,
+    "title": "科技爱好者周刊（第 395 期）：软件开发的第三种方式",
+    "url": "https://www.ruanyifeng.com/blog/2026/05/weekly-issue-395.html"
+  },
+  {
+    "issue": 9,
+    "title": "科技爱好者周刊（第 394 期）：第二次 API 开放浪潮",
+    "url": "https://www.ruanyifeng.com/blog/2026/04/weekly-issue-394.html"
+  },
+  {
+    "issue": 10,
+    "title": "科技爱好者周刊（第 393 期）：脑腐状态",
+    "url": "https://www.ruanyifeng.com/blog/2026/04/weekly-issue-393.html"
+  },
+  {
+    "issue": 11,
+    "title": "科技爱好者周刊（第 392 期）：axios 投毒与好莱坞式骗术",
+    "url": "https://www.ruanyifeng.com/blog/2026/04/weekly-issue-392.html"
+  },
+  {
+    "issue": 12,
+    "title": "科技爱好者周刊（第 391 期）：AI 的贫富分化",
+    "url": "https://www.ruanyifeng.com/blog/2026/04/weekly-issue-391.html"
+  },
+  {
+    "issue": 13,
+    "title": "科技爱好者周刊（第 390 期）：没有语料，大模型就是智障",
+    "url": "https://www.ruanyifeng.com/blog/2026/03/weekly-issue-390.html"
+  },
+  {
+    "issue": 14,
+    "title": "科技爱好者周刊（第 389 期）：未来如何招聘程序员",
+    "url": "https://www.ruanyifeng.com/blog/2026/03/weekly-issue-389.html"
+  },
+  {
+    "issue": 15,
+    "title": "科技爱好者周刊（第 388 期）：测试是新的护城河",
+    "url": "https://www.ruanyifeng.com/blog/2026/03/weekly-issue-388.html"
+  },
+  {
+    "issue": 16,
+    "title": "科技爱好者周刊（第 387 期）：你是领先的",
+    "url": "https://www.ruanyifeng.com/blog/2026/03/weekly-issue-387.html"
+  },
+  {
+    "issue": 17,
     "title": "科技爱好者周刊（第 386 期）：当外卖员接入 AI",
     "url": "https://www.ruanyifeng.com/blog/2026/02/weekly-issue-386.html"
   },
   {
-    "issue": 2,
+    "issue": 18,
     "title": "科技爱好者周刊（第 385 期）：马斯克害怕中国车企吗？",
     "url": "https://www.ruanyifeng.com/blog/2026/02/weekly-issue-385.html"
   },
   {
-    "issue": 3,
+    "issue": 19,
     "title": "科技爱好者周刊（第 384 期）：为什么软件股下跌",
     "url": "https://www.ruanyifeng.com/blog/2026/02/weekly-issue-384.html"
   },
   {
-    "issue": 4,
+    "issue": 20,
     "title": "科技爱好者周刊（第 383 期）：你是第几级 AI 编程",
     "url": "https://www.ruanyifeng.com/blog/2026/01/weekly-issue-383.html"
   },
   {
-    "issue": 5,
+    "issue": 21,
     "title": "科技爱好者周刊（第 382 期）：独立软件的黄昏",
     "url": "https://www.ruanyifeng.com/blog/2026/01/weekly-issue-382.html"
   },
   {
-    "issue": 6,
+    "issue": 22,
     "title": "科技爱好者周刊（第 381 期）：中国 AI 大模型领导者在想什么",
     "url": "https://www.ruanyifeng.com/blog/2026/01/weekly-issue-381.html"
   },
   {
-    "issue": 7,
+    "issue": 23,
     "title": "科技爱好者周刊（第 380 期）：为什么人们拥抱\"不对称收益\"",
     "url": "https://www.ruanyifeng.com/blog/2026/01/weekly-issue-380.html"
   },
   {
-    "issue": 8,
+    "issue": 24,
     "title": "科技爱好者周刊（第 379 期）：《硅谷钢铁侠》摘录",
     "url": "https://www.ruanyifeng.com/blog/2025/12/weekly-issue-379.html"
   },
   {
-    "issue": 9,
+    "issue": 25,
     "title": "科技爱好者周刊（第 378 期）：预测是新的互联网热点",
     "url": "https://www.ruanyifeng.com/blog/2025/12/weekly-issue-378.html"
   },
   {
-    "issue": 10,
+    "issue": 26,
     "title": "科技爱好者周刊（第 377 期）：14万美元的贫困线",
     "url": "https://www.ruanyifeng.com/blog/2025/12/weekly-issue-377.html"
   },
   {
-    "issue": 11,
+    "issue": 27,
     "title": "科技爱好者周刊（第 376 期）：太空数据中心的争议",
     "url": "https://www.ruanyifeng.com/blog/2025/12/weekly-issue-376.html"
   },
   {
-    "issue": 12,
+    "issue": 28,
     "title": "科技爱好者周刊（第 375 期）：一扇门的 Bug",
     "url": "https://www.ruanyifeng.com/blog/2025/11/weekly-issue-375.html"
   },
   {
-    "issue": 13,
+    "issue": 29,
     "title": "科技爱好者周刊（第 374 期）：6GHz 的问题",
     "url": "https://www.ruanyifeng.com/blog/2025/11/weekly-issue-374.html"
   },
   {
-    "issue": 14,
+    "issue": 30,
     "title": "科技爱好者周刊（第 373 期）：数据模型是新产品的核心",
     "url": "https://www.ruanyifeng.com/blog/2025/11/weekly-issue-373.html"
   },
   {
-    "issue": 15,
+    "issue": 31,
     "title": "科技爱好者周刊（第 372 期）：软件界面如何设计",
     "url": "https://www.ruanyifeng.com/blog/2025/11/weekly-issue-372.html"
   },
   {
-    "issue": 16,
+    "issue": 32,
     "title": "科技爱好者周刊（第 371 期）：一个乐观主义者的专访",
     "url": "https://www.ruanyifeng.com/blog/2025/10/weekly-issue-371.html"
   },
   {
-    "issue": 17,
+    "issue": 33,
     "title": "科技爱好者周刊（第 370 期）：正确的代码高亮",
     "url": "https://www.ruanyifeng.com/blog/2025/10/weekly-issue-370.html"
   },
   {
-    "issue": 18,
+    "issue": 34,
     "title": "科技爱好者周刊（第 369 期）：Tim 与罗永浩的对谈",
     "url": "https://www.ruanyifeng.com/blog/2025/10/weekly-issue-369.html"
   },
   {
-    "issue": 19,
+    "issue": 35,
     "title": "科技爱好者周刊（第 368 期）：不要这样管理软件团队",
     "url": "https://www.ruanyifeng.com/blog/2025/10/weekly-issue-368.html"
   },
   {
-    "issue": 20,
+    "issue": 36,
     "title": "科技爱好者周刊（第 367 期）：Nano Banana 的几个妙用",
     "url": "https://www.ruanyifeng.com/blog/2025/09/weekly-issue-367.html"
   },
   {
-    "issue": 21,
+    "issue": 37,
     "title": "科技爱好者周刊（第 366 期）：旧金山疯狂的 AI 广告",
     "url": "https://www.ruanyifeng.com/blog/2025/09/weekly-issue-366.html"
   },
   {
-    "issue": 22,
+    "issue": 38,
     "title": "科技爱好者周刊（第 365 期）：流量变现正在崩塌",
     "url": "https://www.ruanyifeng.com/blog/2025/09/weekly-issue-365.html"
   },
   {
-    "issue": 23,
+    "issue": 39,
     "title": "科技爱好者周刊（第 364 期）：最难还原的魔方",
     "url": "https://www.ruanyifeng.com/blog/2025/09/weekly-issue-364.html"
   },
   {
-    "issue": 24,
+    "issue": 40,
     "title": "科技爱好者周刊（第 363 期）：最好懂的神经网络解释",
     "url": "https://www.ruanyifeng.com/blog/2025/08/weekly-issue-363.html"
   },
   {
-    "issue": 25,
+    "issue": 41,
     "title": "科技爱好者周刊（第 362 期）：GitHub 工程师谈系统设计",
     "url": "https://www.ruanyifeng.com/blog/2025/08/weekly-issue-362.html"
   },
   {
-    "issue": 26,
+    "issue": 42,
     "title": "科技爱好者周刊（第 361 期）：暗网 Tor 安全吗？",
     "url": "https://www.ruanyifeng.com/blog/2025/08/weekly-issue-361.html"
   },
   {
-    "issue": 27,
+    "issue": 43,
     "title": "科技爱好者周刊（第 360 期）：Dan Wang 的新书",
     "url": "https://www.ruanyifeng.com/blog/2025/08/weekly-issue-360.html"
   },
   {
-    "issue": 28,
+    "issue": 44,
     "title": "科技爱好者周刊（第 359 期）：Palantir 值得关注",
     "url": "https://www.ruanyifeng.com/blog/2025/08/weekly-issue-359.html"
   },
   {
-    "issue": 29,
+    "issue": 45,
     "title": "科技爱好者周刊（第 358 期）：如何拯救一家濒临倒闭的创业公司",
     "url": "https://www.ruanyifeng.com/blog/2025/07/weekly-issue-358.html"
   },
   {
-    "issue": 30,
+    "issue": 46,
     "title": "科技爱好者周刊（第 357 期）：稳定币的博弈",
     "url": "https://www.ruanyifeng.com/blog/2025/07/weekly-issue-357.html"
   },
   {
-    "issue": 31,
+    "issue": 47,
     "title": "科技爱好者周刊（第 356 期）：公司强推 AI 编程，我该怎么办",
     "url": "https://www.ruanyifeng.com/blog/2025/07/weekly-issue-356.html"
   },
   {
-    "issue": 32,
+    "issue": 48,
     "title": "科技爱好者周刊（第 355 期）：两本《芯片战争》",
     "url": "https://www.ruanyifeng.com/blog/2025/07/weekly-issue-355.html"
   },
   {
-    "issue": 33,
+    "issue": 49,
     "title": "科技爱好者周刊（第 354 期）：8000mAh 手机电池，说明了什么？",
     "url": "https://www.ruanyifeng.com/blog/2025/06/weekly-issue-354.html"
   },
   {
-    "issue": 34,
+    "issue": 50,
     "title": "科技爱好者周刊（第 353 期）：苹果的\"液态玻璃\"是为了 AR",
     "url": "https://www.ruanyifeng.com/blog/2025/06/weekly-issue-353.html"
   },
   {
-    "issue": 35,
+    "issue": 51,
     "title": "科技爱好者周刊（第 352 期）：Bug 追踪系统的正确样子",
     "url": "https://www.ruanyifeng.com/blog/2025/06/weekly-issue-352.html"
   },
   {
-    "issue": 36,
+    "issue": 52,
     "title": "科技爱好者周刊（第 351 期）：GitHub Issues（几乎）是最好的笔记应用",
     "url": "https://www.ruanyifeng.com/blog/2025/06/weekly-issue-351.html"
   },
   {
-    "issue": 37,
+    "issue": 53,
     "title": "科技爱好者周刊（第 350 期）：Java 三十周年",
     "url": "https://www.ruanyifeng.com/blog/2025/05/weekly-issue-350.html"
   },
   {
-    "issue": 38,
+    "issue": 54,
     "title": "科技爱好者周刊（第 349 期）：神经网络算法的发明者",
     "url": "https://www.ruanyifeng.com/blog/2025/05/weekly-issue-349.html"
   },
   {
-    "issue": 39,
+    "issue": 55,
     "title": "科技爱好者周刊（第 348 期）：李飞飞，从移民到 AI 明星",
     "url": "https://www.ruanyifeng.com/blog/2025/05/weekly-issue-348.html"
   },
   {
-    "issue": 40,
+    "issue": 56,
     "title": "科技爱好者周刊（第 347 期）：冷启动的破解之道",
     "url": "https://www.ruanyifeng.com/blog/2025/05/weekly-issue-347.html"
   },
   {
-    "issue": 41,
+    "issue": 57,
     "title": "科技爱好者周刊（第 346 期）：未来就是永恒感的丧失",
     "url": "https://www.ruanyifeng.com/blog/2025/04/weekly-issue-346.html"
   },
   {
-    "issue": 42,
+    "issue": 58,
     "title": "科技爱好者周刊（第 345 期）：HDMI 2.2 影音可能到头了",
     "url": "https://www.ruanyifeng.com/blog/2025/04/weekly-issue-345.html"
   },
   {
-    "issue": 43,
+    "issue": 59,
     "title": "科技爱好者周刊（第 344 期）：制造业正在\"零工化\"",
     "url": "https://www.ruanyifeng.com/blog/2025/04/weekly-issue-344.html"
   },
   {
-    "issue": 44,
+    "issue": 60,
     "title": "科技爱好者周刊（第 343 期）：如何阻止 AI 爬虫",
     "url": "https://www.ruanyifeng.com/blog/2025/03/weekly-issue-343.html"
   },
   {
-    "issue": 45,
+    "issue": 61,
     "title": "科技爱好者周刊（第 342 期）：面试的 AI 作弊----用数字人去面试",
     "url": "https://www.ruanyifeng.com/blog/2025/03/weekly-issue-342.html"
   },
   {
-    "issue": 46,
+    "issue": 62,
     "title": "科技爱好者周刊（第 341 期）：低代码编程，恐怕不会成功",
     "url": "https://www.ruanyifeng.com/blog/2025/03/weekly-issue-341.html"
   },
   {
-    "issue": 47,
+    "issue": 63,
     "title": "科技爱好者周刊（第 340 期）：技术炒作三十年",
     "url": "https://www.ruanyifeng.com/blog/2025/03/weekly-issue-340.html"
   },
   {
-    "issue": 48,
+    "issue": 64,
     "title": "科技爱好者周刊（第 339 期）：代币是什么",
     "url": "https://www.ruanyifeng.com/blog/2025/02/weekly-issue-339.html"
   },
   {
-    "issue": 49,
+    "issue": 65,
     "title": "科技爱好者周刊（第 338 期）：重新思考 6G",
     "url": "https://www.ruanyifeng.com/blog/2025/02/weekly-issue-338.html"
   },
   {
-    "issue": 50,
+    "issue": 66,
     "title": "科技爱好者周刊（第 337 期）：互联网创业几乎没了",
     "url": "https://www.ruanyifeng.com/blog/2025/02/weekly-issue-337.html"
   },
   {
-    "issue": 51,
+    "issue": 67,
     "title": "科技爱好者周刊（第 336 期）：面对 AI，互联网正在衰落",
     "url": "https://www.ruanyifeng.com/blog/2025/02/weekly-issue-336.html"
   },
   {
-    "issue": 52,
+    "issue": 68,
     "title": "科技爱好者周刊（第 335 期）：年底的未来已来",
     "url": "https://www.ruanyifeng.com/blog/2025/01/weekly-issue-335.html"
   },
   {
-    "issue": 53,
+    "issue": 69,
     "title": "科技爱好者周刊（第 334 期）：年终笔记四则",
     "url": "https://www.ruanyifeng.com/blog/2025/01/weekly-issue-334.html"
   },
   {
-    "issue": 54,
+    "issue": 70,
     "title": "科技爱好者周刊（第 333 期）：一切都要支付两次",
     "url": "https://www.ruanyifeng.com/blog/2025/01/weekly-issue-333.html"
   },
   {
-    "issue": 55,
+    "issue": 71,
     "title": "科技爱好者周刊（第 332 期）：西蒙·威利森的年终总结，梁文锋的访谈",
     "url": "https://www.ruanyifeng.com/blog/2025/01/weekly-issue-332.html"
   },
   {
-    "issue": 56,
+    "issue": 72,
     "title": "科技爱好者周刊（第 331 期）：你可能是一个 NPC",
     "url": "https://www.ruanyifeng.com/blog/2024/12/weekly-issue-331.html"
   },
   {
-    "issue": 57,
+    "issue": 73,
     "title": "科技爱好者周刊（第 330 期）：李开复梳理人工智能",
     "url": "https://www.ruanyifeng.com/blog/2024/12/weekly-issue-330.html"
   },
   {
-    "issue": 58,
+    "issue": 74,
     "title": "科技爱好者周刊（第 329 期）：示意图利器 D2",
     "url": "https://www.ruanyifeng.com/blog/2024/12/weekly-issue-329.html"
   },
   {
-    "issue": 59,
+    "issue": 75,
     "title": "科技爱好者周刊（第 328 期）：AI 模型不是一门好生意",
     "url": "https://www.ruanyifeng.com/blog/2024/12/weekly-issue-328.html"
   },
   {
-    "issue": 60,
+    "issue": 76,
     "title": "科技爱好者周刊（第 327 期）：没有链接的互联网",
     "url": "https://www.ruanyifeng.com/blog/2024/11/weekly-issue-327.html"
   },
   {
-    "issue": 61,
+    "issue": 77,
     "title": "科技爱好者周刊（第 326 期）：世界没有那么多财富",
     "url": "https://www.ruanyifeng.com/blog/2024/11/weekly-issue-326.html"
   },
   {
-    "issue": 62,
+    "issue": 78,
     "title": "科技爱好者周刊（第 325 期）：VS Code 编辑器的下一站是 Zed？",
     "url": "https://www.ruanyifeng.com/blog/2024/11/weekly-issue-325.html"
   },
   {
-    "issue": 63,
+    "issue": 79,
     "title": "科技爱好者周刊（第 324 期）：人类已知的最大质数",
     "url": "https://www.ruanyifeng.com/blog/2024/11/weekly-issue-324.html"
   },
   {
-    "issue": 64,
+    "issue": 80,
     "title": "科技爱好者周刊（第 323 期）：技术公司的口号比拼",
     "url": "https://www.ruanyifeng.com/blog/2024/11/weekly-issue-323.html"
   },
   {
-    "issue": 65,
+    "issue": 81,
     "title": "科技爱好者周刊（第 322 期）：内容行业的内幕",
     "url": "https://www.ruanyifeng.com/blog/2024/10/weekly-issue-322.html"
   },
   {
-    "issue": 66,
+    "issue": 82,
     "title": "科技爱好者周刊（第 321 期）：傅盛回忆录",
     "url": "https://www.ruanyifeng.com/blog/2024/10/weekly-issue-321.html"
   },
   {
-    "issue": 67,
+    "issue": 83,
     "title": "科技爱好者周刊（第 320 期）：乒乓仓",
     "url": "https://www.ruanyifeng.com/blog/2024/10/weekly-issue-320.html"
   },
   {
-    "issue": 68,
+    "issue": 84,
     "title": "科技爱好者周刊（第 319 期）：如何拍出爆款视频",
     "url": "https://www.ruanyifeng.com/blog/2024/09/weekly-issue-319.html"
   },
   {
-    "issue": 69,
+    "issue": 85,
     "title": "科技爱好者周刊（第 318 期）：创业咖啡馆的记忆",
     "url": "https://www.ruanyifeng.com/blog/2024/09/weekly-issue-318.html"
   },
   {
-    "issue": 70,
+    "issue": 86,
     "title": "科技爱好者周刊（第 317 期）：驴子、老虎和狮子的寓言",
     "url": "https://www.ruanyifeng.com/blog/2024/09/weekly-issue-317.html"
   },
   {
-    "issue": 71,
+    "issue": 87,
     "title": "科技爱好者周刊（第 316 期）：你一生的故事",
     "url": "https://www.ruanyifeng.com/blog/2024/09/weekly-issue-316.html"
   },
   {
-    "issue": 72,
+    "issue": 88,
     "title": "科技爱好者周刊（第 315 期）：一份谷歌离职报告",
     "url": "https://www.ruanyifeng.com/blog/2024/08/weekly-issue-315.html"
   },
   {
-    "issue": 73,
+    "issue": 89,
     "title": "科技爱好者周刊（第 314 期）：《黑神话：悟空》可以产业化吗？",
     "url": "https://www.ruanyifeng.com/blog/2024/08/weekly-issue-314.html"
   },
   {
-    "issue": 74,
+    "issue": 90,
     "title": "科技爱好者周刊（第 313 期）：如果新加坡没有空调",
     "url": "https://www.ruanyifeng.com/blog/2024/08/weekly-issue-313.html"
   },
   {
-    "issue": 75,
+    "issue": 91,
     "title": "科技爱好者周刊（第 312 期）：从英特尔看\"美国制造\"",
     "url": "https://www.ruanyifeng.com/blog/2024/08/weekly-issue-312.html"
   },
   {
-    "issue": 76,
+    "issue": 92,
     "title": "科技爱好者周刊（第 311 期）：低利率与长期项目",
     "url": "https://www.ruanyifeng.com/blog/2024/08/weekly-issue-311.html"
   },
   {
-    "issue": 77,
+    "issue": 93,
     "title": "科技爱好者周刊（第 310 期）：内容农场的 AI 赚钱术",
     "url": "https://www.ruanyifeng.com/blog/2024/07/weekly-issue-310.html"
   },
   {
-    "issue": 78,
+    "issue": 94,
     "title": "科技爱好者周刊（第 309 期）：无人驾驶出租车的双面刃",
     "url": "https://www.ruanyifeng.com/blog/2024/07/weekly-issue-309.html"
   },
   {
-    "issue": 79,
+    "issue": 95,
     "title": "科技爱好者周刊（第 308 期）：工作找不到，博士能读吗？",
     "url": "https://www.ruanyifeng.com/blog/2024/07/weekly-issue-308.html"
   },
   {
-    "issue": 80,
+    "issue": 96,
     "title": "科技爱好者周刊（第 307 期）：不要看重 Product Hunt",
     "url": "https://www.ruanyifeng.com/blog/2024/07/weekly-issue-307.html"
   },
   {
-    "issue": 81,
+    "issue": 97,
     "title": "科技爱好者周刊（第 306 期）：信息就像糖一样上瘾",
     "url": "https://www.ruanyifeng.com/blog/2024/06/weekly-issue-306.html"
   },
   {
-    "issue": 82,
+    "issue": 98,
     "title": "科技爱好者周刊（第 305 期）：随机数，这是一个问题",
     "url": "https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html"
   },
   {
-    "issue": 83,
+    "issue": 99,
     "title": "科技爱好者周刊（第 304 期）：最受欢迎的颜色",
     "url": "https://www.ruanyifeng.com/blog/2024/06/weekly-issue-304.html"
   },
   {
-    "issue": 84,
+    "issue": 100,
     "title": "科技爱好者周刊（第 303 期）：技术封建主义",
     "url": "https://www.ruanyifeng.com/blog/2024/06/weekly-issue-303.html"
   },
   {
-    "issue": 85,
+    "issue": 101,
     "title": "科技爱好者周刊（第 302 期）：创业虽然好，不敢推荐了",
     "url": "https://www.ruanyifeng.com/blog/2024/05/weekly-issue-302.html"
   },
   {
-    "issue": 86,
+    "issue": 102,
     "title": "科技爱好者周刊（第 301 期）：OpenAI 的图书馆工位",
     "url": "https://www.ruanyifeng.com/blog/2024/05/weekly-issue-301.html"
   },
   {
-    "issue": 87,
+    "issue": 103,
     "title": "科技爱好者周刊（第 300 期）：三十年，解决人生三大问题",
     "url": "https://www.ruanyifeng.com/blog/2024/05/weekly-issue-300.html"
   },
   {
-    "issue": 88,
+    "issue": 104,
     "title": "科技爱好者周刊（第 299 期）：AI 的关键是语料",
     "url": "https://www.ruanyifeng.com/blog/2024/05/weekly-issue-299.html"
   },
   {
-    "issue": 89,
+    "issue": 105,
     "title": "科技爱好者周刊（第 298 期）：轮到硬件工程师吃香了",
     "url": "https://www.ruanyifeng.com/blog/2024/04/weekly-issue-298.html"
   },
   {
-    "issue": 90,
+    "issue": 106,
     "title": "科技爱好者周刊（第 297 期）：饮水鸟玩具",
     "url": "https://www.ruanyifeng.com/blog/2024/04/weekly-issue-297.html"
   },
   {
-    "issue": 91,
+    "issue": 107,
     "title": "科技爱好者周刊（第 296 期）：xz 后门的作者 Jia Tan 是谁？",
     "url": "https://www.ruanyifeng.com/blog/2024/04/weekly-issue-296.html"
   },
   {
-    "issue": 92,
+    "issue": 108,
     "title": "科技爱好者周刊（第 295 期）：巧妙的灯泡钟",
     "url": "https://www.ruanyifeng.com/blog/2024/03/weekly-issue-295.html"
   },
   {
-    "issue": 93,
+    "issue": 109,
     "title": "科技爱好者周刊（第 294 期）：崖门海战的感想",
     "url": "https://www.ruanyifeng.com/blog/2024/03/weekly-issue-294.html"
   },
   {
-    "issue": 94,
+    "issue": 110,
     "title": "科技爱好者周刊（第 293 期）：一周是一年的2%",
     "url": "https://www.ruanyifeng.com/blog/2024/03/weekly-issue-293.html"
   },
   {
-    "issue": 95,
+    "issue": 111,
     "title": "科技爱好者周刊（第 292 期）：所有代码都是技术债",
     "url": "https://www.ruanyifeng.com/blog/2024/03/weekly-issue-292.html"
   },
   {
-    "issue": 96,
+    "issue": 112,
     "title": "科技爱好者周刊（第 291 期）：AI 没有护城河",
     "url": "https://www.ruanyifeng.com/blog/2024/03/weekly-issue-291.html"
   },
   {
-    "issue": 97,
+    "issue": 113,
     "title": "科技爱好者周刊（第 290 期）：苹果头盔的最大问题",
     "url": "https://www.ruanyifeng.com/blog/2024/02/weekly-issue-290.html"
   },
   {
-    "issue": 98,
+    "issue": 114,
     "title": "科技爱好者周刊（第 289 期）：宽容从何而来",
     "url": "https://www.ruanyifeng.com/blog/2024/02/weekly-issue-289.html"
   },
   {
-    "issue": 99,
+    "issue": 115,
     "title": "科技爱好者周刊（第 288 期）：技术写作的首要诀窍",
     "url": "https://www.ruanyifeng.com/blog/2024/01/weekly-issue-288.html"
   },
   {
-    "issue": 100,
+    "issue": 116,
     "title": "科技爱好者周刊（第 287 期）：禄丰恐龙谷记行",
     "url": "https://www.ruanyifeng.com/blog/2024/01/weekly-issue-287.html"
   },
   {
-    "issue": 101,
+    "issue": 117,
     "title": "科技爱好者周刊（第 286 期）：蓝色指示灯的解决方案",
     "url": "https://www.ruanyifeng.com/blog/2024/01/weekly-issue-286.html"
   },
   {
-    "issue": 102,
+    "issue": 118,
     "title": "科技爱好者周刊（第 285 期）：为什么 PPT 不如备忘录",
     "url": "https://www.ruanyifeng.com/blog/2024/01/weekly-issue-285.html"
   },
   {
-    "issue": 103,
+    "issue": 119,
     "title": "科技爱好者周刊（第 284 期）：YouTube 有多少个视频？",
     "url": "https://www.ruanyifeng.com/blog/2023/12/weekly-issue-284.html"
   },
   {
-    "issue": 104,
+    "issue": 120,
     "title": "科技爱好者周刊（第 283 期）：[年终感想] 没有目的地，向前走",
     "url": "https://www.ruanyifeng.com/blog/2023/12/weekly-issue-283.html"
   },
   {
-    "issue": 105,
+    "issue": 121,
     "title": "科技爱好者周刊（第 282 期）：电动皮卡 Cybertruck 的 48V 供电",
     "url": "https://www.ruanyifeng.com/blog/2023/12/weekly-issue-282.html"
   },
   {
-    "issue": 106,
+    "issue": 122,
     "title": "科技爱好者周刊（第 281 期）：新基建的政策选择",
     "url": "https://www.ruanyifeng.com/blog/2023/12/weekly-issue-281.html"
   },
   {
-    "issue": 107,
+    "issue": 123,
     "title": "科技爱好者周刊（第 280 期）：机器点餐与宅文化",
     "url": "https://www.ruanyifeng.com/blog/2023/12/weekly-issue-280.html"
   },
   {
-    "issue": 108,
+    "issue": 124,
     "title": "科技爱好者周刊（第 279 期）：网络社区的悲剧",
     "url": "https://www.ruanyifeng.com/blog/2023/11/weekly-issue-279.html"
   },
   {
-    "issue": 109,
+    "issue": 125,
     "title": "科技爱好者周刊（第 278 期）：棘手的 AI 版权",
     "url": "https://www.ruanyifeng.com/blog/2023/11/weekly-issue-278.html"
   },
   {
-    "issue": 110,
+    "issue": 126,
     "title": "科技爱好者周刊（第 277 期）：工作台副屏的最佳选择",
     "url": "https://www.ruanyifeng.com/blog/2023/11/weekly-issue-277.html"
   },
   {
-    "issue": 111,
+    "issue": 127,
     "title": "科技爱好者周刊（第 276 期）：内容行业的衰落",
     "url": "https://www.ruanyifeng.com/blog/2023/11/weekly-issue-276.html"
   },
   {
-    "issue": 112,
+    "issue": 128,
     "title": "科技爱好者周刊（第 275 期）：彼得·蒂尔的实验",
     "url": "https://www.ruanyifeng.com/blog/2023/10/weekly-issue-275.html"
   },
   {
-    "issue": 113,
+    "issue": 129,
     "title": "科技爱好者周刊（第 274 期）：加密通信的最后一块拼图",
     "url": "https://www.ruanyifeng.com/blog/2023/10/weekly-issue-274.html"
   },
   {
-    "issue": 114,
+    "issue": 130,
     "title": "科技爱好者周刊（第 273 期）：任正非的三篇最新谈话",
     "url": "https://www.ruanyifeng.com/blog/2023/10/weekly-issue-273.html"
   },
   {
-    "issue": 115,
+    "issue": 131,
     "title": "科技爱好者周刊（第 272 期）：Unity 的安装费，游戏业的缩影",
     "url": "https://www.ruanyifeng.com/blog/2023/09/weekly-issue-272.html"
   },
   {
-    "issue": 116,
+    "issue": 132,
     "title": "科技爱好者周刊（第 271 期）：非线性的世界，线性的你",
     "url": "https://www.ruanyifeng.com/blog/2023/09/weekly-issue-271.html"
   },
   {
-    "issue": 117,
+    "issue": 133,
     "title": "科技爱好者周刊（第 270 期）：\"精益开发\"的精益是什么？",
     "url": "https://www.ruanyifeng.com/blog/2023/09/weekly-issue-270.html"
   },
   {
-    "issue": 118,
+    "issue": 134,
     "title": "科技爱好者周刊（第 269 期）：为什么英雄不使用炸药",
     "url": "https://www.ruanyifeng.com/blog/2023/09/weekly-issue-269.html"
   },
   {
-    "issue": 119,
+    "issue": 135,
     "title": "科技爱好者周刊（第 268 期）：生产力是形容机器，不是形容人",
     "url": "https://www.ruanyifeng.com/blog/2023/08/weekly-issue-268.html"
   },
   {
-    "issue": 120,
+    "issue": 136,
     "title": "科技爱好者周刊（第 267 期）：5G 的春天要来了",
     "url": "https://www.ruanyifeng.com/blog/2023/08/weekly-issue-267.html"
   },
   {
-    "issue": 121,
+    "issue": 137,
     "title": "科技爱好者周刊（第 266 期）：自己做双语 EPUB 电子书",
     "url": "https://www.ruanyifeng.com/blog/2023/08/weekly-issue-266.html"
   },
   {
-    "issue": 122,
+    "issue": 138,
     "title": "科技爱好者周刊（第 265 期）：WiFi 的后面是 LiFi",
     "url": "https://www.ruanyifeng.com/blog/2023/08/weekly-issue-265.html"
   },
   {
-    "issue": 123,
+    "issue": 139,
     "title": "科技爱好者周刊（第 264 期）：Elasticsearch 的启示",
     "url": "https://www.ruanyifeng.com/blog/2023/07/weekly-issue-264.html"
   },
   {
-    "issue": 124,
+    "issue": 140,
     "title": "科技爱好者周刊（第 263 期）：开源软件如何赚钱？",
     "url": "https://www.ruanyifeng.com/blog/2023/07/weekly-issue-263.html"
   },
   {
-    "issue": 125,
+    "issue": 141,
     "title": "科技爱好者周刊（第 262 期）：告别密码",
     "url": "https://www.ruanyifeng.com/blog/2023/07/weekly-issue-262.html"
   },
   {
-    "issue": 126,
+    "issue": 142,
     "title": "科技爱好者周刊（第 261 期）：黑客马拉松的正确方式",
     "url": "https://www.ruanyifeng.com/blog/2023/07/weely-issue-261.html"
   },
   {
-    "issue": 127,
+    "issue": 143,
     "title": "科技爱好者周刊（第 260 期）：你的旅程不会停在 Day 1",
     "url": "https://www.ruanyifeng.com/blog/2023/06/weekly-issue-260.html"
   },
   {
-    "issue": 128,
+    "issue": 144,
     "title": "科技爱好者周刊（第 259 期）：如何免费使用 ChatGPT",
     "url": "https://www.ruanyifeng.com/blog/2023/06/weekly-issue-259.html"
   },
   {
-    "issue": 129,
+    "issue": 145,
     "title": "科技爱好者周刊（第 258 期）：卡马克的猫",
     "url": "https://www.ruanyifeng.com/blog/2023/06/weekly-issue-258.html"
   },
   {
-    "issue": 130,
+    "issue": 146,
     "title": "科技爱好者周刊（第 257 期）：黄仁勋的 Nvidia 故事",
     "url": "https://www.ruanyifeng.com/blog/2023/06/weekly-issue-257.html"
   },
   {
-    "issue": 131,
+    "issue": 147,
     "title": "科技爱好者周刊（第 256 期）：最酷的乐高作品",
     "url": "https://www.ruanyifeng.com/blog/2023/05/weekly-issue-256.html"
   },
   {
-    "issue": 132,
+    "issue": 148,
     "title": "科技爱好者周刊（第 255 期）：对待 AI 的正确态度",
     "url": "https://www.ruanyifeng.com/blog/2023/05/weekly-issue-255.html"
   },
   {
-    "issue": 133,
+    "issue": 149,
     "title": "科技爱好者周刊（第 254 期）：人生是一个长板问题",
     "url": "https://www.ruanyifeng.com/blog/2023/05/weekly-issue-254.html"
   },
   {
-    "issue": 134,
+    "issue": 150,
     "title": "科技爱好者周刊（第 253 期）：训练材料用完之日",
     "url": "https://www.ruanyifeng.com/blog/2023/05/weekly-issue-253.html"
   },
   {
-    "issue": 135,
+    "issue": 151,
     "title": "科技爱好者周刊（第 252 期）：互联网创业变难了",
     "url": "https://www.ruanyifeng.com/blog/2023/04/weekly-issue-252.html"
   },
   {
-    "issue": 136,
+    "issue": 152,
     "title": "科技爱好者周刊（第 251 期）：国产单板机值得推荐",
     "url": "https://www.ruanyifeng.com/blog/2023/04/weekly-issue-251.html"
   },
   {
-    "issue": 137,
+    "issue": 153,
     "title": "科技爱好者周刊（第 250 期）：新技术的最大风险",
     "url": "https://www.ruanyifeng.com/blog/2023/04/weekly-issue-250.html"
   },
   {
-    "issue": 138,
+    "issue": 154,
     "title": "科技爱好者周刊（第 249 期）：最成功的软件企业家",
     "url": "https://www.ruanyifeng.com/blog/2023/04/weekly-issue-249.html"
   },
   {
-    "issue": 139,
+    "issue": 155,
     "title": "科技爱好者周刊（第 248 期）：不要夸大 ChatGPT",
     "url": "https://www.ruanyifeng.com/blog/2023/03/weekly-issue-248.html"
   },
   {
-    "issue": 140,
+    "issue": 156,
     "title": "科技爱好者周刊（第 247 期）：扎克伯格的裁员信",
     "url": "https://www.ruanyifeng.com/blog/2023/03/weekly-issue-247.html"
   },
   {
-    "issue": 141,
+    "issue": 157,
     "title": "科技爱好者周刊（第 246 期）：永不丢失的网络身份",
     "url": "https://www.ruanyifeng.com/blog/2023/03/weekly-issue-246.html"
   },
   {
-    "issue": 142,
+    "issue": 158,
     "title": "科技爱好者周刊（第 245 期）：摩天大楼是反人类的",
     "url": "https://www.ruanyifeng.com/blog/2023/03/weekly-issue-245.html"
   },
   {
-    "issue": 143,
+    "issue": 159,
     "title": "科技爱好者周刊（第 244 期）：大数据已死",
     "url": "https://www.ruanyifeng.com/blog/2023/03/weekly-issue-244.html"
   },
   {
-    "issue": 144,
+    "issue": 160,
     "title": "科技爱好者周刊（第 243 期）：与孔子 AI 聊天",
     "url": "https://www.ruanyifeng.com/blog/2023/02/weekly-issue-243.html"
   },
   {
-    "issue": 145,
+    "issue": 161,
     "title": "科技爱好者周刊（第 242 期）：一次尴尬的服务器被黑",
     "url": "https://www.ruanyifeng.com/blog/2023/02/weekly-issue-242.html"
   },
   {
-    "issue": 146,
+    "issue": 162,
     "title": "科技爱好者周刊（第 241 期）：中国的增长动力在内陆",
     "url": "https://www.ruanyifeng.com/blog/2023/02/weekly-issue-241.html"
   },
   {
-    "issue": 147,
+    "issue": 163,
     "title": "科技爱好者周刊（第 240 期）：教育年限可以缩短吗？",
     "url": "https://www.ruanyifeng.com/blog/2023/02/weekly-issue-240.html"
   },
   {
-    "issue": 148,
+    "issue": 164,
     "title": "科技爱好者周刊（第 239 期）：未来两种人会增加",
     "url": "https://www.ruanyifeng.com/blog/2023/01/weekly-issue-239.html"
   },
   {
-    "issue": 149,
+    "issue": 165,
     "title": "科技爱好者周刊（第 238 期）：停止寻找的最佳时间",
     "url": "https://www.ruanyifeng.com/blog/2023/01/weekly-issue-238.html"
   },
   {
-    "issue": 150,
+    "issue": 166,
     "title": "科技爱好者周刊（第 237 期）：真实方位是如何暴露的？",
     "url": "https://www.ruanyifeng.com/blog/2022/12/weekly-issue-237.html"
   },
   {
-    "issue": 151,
+    "issue": 167,
     "title": "科技爱好者周刊（第 236 期）：中国的阳光地带",
     "url": "https://www.ruanyifeng.com/blog/2022/12/weekly-issue-236.html"
   },
   {
-    "issue": 152,
+    "issue": 168,
     "title": "科技爱好者周刊（第 235 期）：青年失业率与选择创业",
     "url": "https://www.ruanyifeng.com/blog/2022/12/weekly-issue-235.html"
   },
   {
-    "issue": 153,
+    "issue": 169,
     "title": "科技爱好者周刊（第 234 期）：AI 聊天有多强？",
     "url": "https://www.ruanyifeng.com/blog/2022/12/weekly-issue-234.html"
   },
   {
-    "issue": 154,
+    "issue": 170,
     "title": "科技爱好者周刊（第 233 期）：生活就像一个鱼缸",
     "url": "https://www.ruanyifeng.com/blog/2022/12/weekly-issue-233.html"
   },
   {
-    "issue": 155,
+    "issue": 171,
     "title": "科技爱好者周刊（第 232 期）：好用的平面设计软件",
     "url": "https://www.ruanyifeng.com/blog/2022/11/weekly-issue-232.html"
   },
   {
-    "issue": 156,
+    "issue": 172,
     "title": "科技爱好者周刊（第 231 期）：互联网公司需要多少员工？",
     "url": "https://www.ruanyifeng.com/blog/2022/11/weekly-issue-231.html"
   },
   {
-    "issue": 157,
+    "issue": 173,
     "title": "科技爱好者周刊（第 230 期）：电子产品的用电量",
     "url": "https://www.ruanyifeng.com/blog/2022/11/weekly-issue-230.html"
   },
   {
-    "issue": 158,
+    "issue": 174,
     "title": "科技爱好者周刊（第 229 期）：手机充电问题的解决",
     "url": "https://www.ruanyifeng.com/blog/2022/11/weekly-issue-229.html"
   },
   {
-    "issue": 159,
+    "issue": 175,
     "title": "科技爱好者周刊（第 228 期）：人类和人生的意义",
     "url": "https://www.ruanyifeng.com/blog/2022/10/weekly-issue-228.html"
   },
   {
-    "issue": 160,
+    "issue": 176,
     "title": "科技爱好者周刊（第 227 期）：脸书的公司入职教育",
     "url": "https://www.ruanyifeng.com/blog/2022/10/weekly-issue-227.html"
   },
   {
-    "issue": 161,
+    "issue": 177,
     "title": "科技爱好者周刊（第 226 期）：谷歌出了什么问题？",
     "url": "https://www.ruanyifeng.com/blog/2022/10/weekly-issue-226.html"
   },
   {
-    "issue": 162,
+    "issue": 178,
     "title": "科技爱好者周刊（第 225 期）：NPC 演员也是一种职业",
     "url": "https://www.ruanyifeng.com/blog/2022/09/weekly-issue-225.html"
   },
   {
-    "issue": 163,
+    "issue": 179,
     "title": "科技爱好者周刊（第 224 期）：Figma 为什么赢了 Sketch",
     "url": "https://www.ruanyifeng.com/blog/2022/09/weekly-issue-224.html"
   },
   {
-    "issue": 164,
+    "issue": 180,
     "title": "科技爱好者周刊（第 223 期）：程序员需要担心裁员吗？",
     "url": "https://www.ruanyifeng.com/blog/2022/09/weekly-issue-223.html"
   },
   {
-    "issue": 165,
+    "issue": 181,
     "title": "科技爱好者周刊（第 222 期）：四十年编程感想",
     "url": "https://www.ruanyifeng.com/blog/2022/09/weekly-issue-222.html"
   },
   {
-    "issue": 166,
+    "issue": 182,
     "title": "科技爱好者周刊（第 221 期）：全世界最繁荣的行业",
     "url": "https://www.ruanyifeng.com/blog/2022/09/weekly-issue-221.html"
   },
   {
-    "issue": 167,
+    "issue": 183,
     "title": "科技爱好者周刊（第 220 期）：人工智能的机会在哪里",
     "url": "https://www.ruanyifeng.com/blog/2022/08/weekly-issue-220.html"
   },
   {
-    "issue": 168,
+    "issue": 184,
     "title": "科技爱好者周刊（第 219 期）：如何防止帐号被黑",
     "url": "https://www.ruanyifeng.com/blog/2022/08/weekly-issue-219.html"
   },
   {
-    "issue": 169,
+    "issue": 185,
     "title": "科技爱好者周刊（第 218 期）：葡萄酒，樱花，全球变暖",
     "url": "https://www.ruanyifeng.com/blog/2022/08/weekly-issue-218.html"
   },
   {
-    "issue": 170,
+    "issue": 186,
     "title": "科技爱好者周刊（第 217 期）：沙特的新未来城",
     "url": "https://www.ruanyifeng.com/blog/2022/08/weekly-issue-217.html"
   },
   {
-    "issue": 171,
+    "issue": 187,
     "title": "科技爱好者周刊（第 216 期）：极简主义的胜利",
     "url": "https://www.ruanyifeng.com/blog/2022/07/weekly-issue-216.html"
   },
   {
-    "issue": 172,
+    "issue": 188,
     "title": "科技爱好者周刊（第 215 期）：互联网最喜欢的行为模式",
     "url": "https://www.ruanyifeng.com/blog/2022/07/weekly-issue-215.html"
   },
   {
-    "issue": 173,
+    "issue": 189,
     "title": "科技爱好者周刊（第 214 期）：你的地图是错的",
     "url": "https://www.ruanyifeng.com/blog/2022/07/weekly-issue-214.html"
   },
   {
-    "issue": 174,
+    "issue": 190,
     "title": "科技爱好者周刊（第 213 期）：知识孤岛，知识软件",
     "url": "https://www.ruanyifeng.com/blog/2022/07/weekly-issue-213.html"
   },
   {
-    "issue": 175,
+    "issue": 191,
     "title": "科技爱好者周刊（第 212 期）：人生不短",
     "url": "https://www.ruanyifeng.com/blog/2022/07/weekly-issue-212.html"
   },
   {
-    "issue": 176,
+    "issue": 192,
     "title": "科技爱好者周刊（第 211 期）：虚拟商品可以拉动 GDP",
     "url": "https://www.ruanyifeng.com/blog/2022/06/weekly-issue-211.html"
   },
   {
-    "issue": 177,
+    "issue": 193,
     "title": "科技爱好者周刊（第 210 期）：为什么软件变得复杂",
     "url": "https://www.ruanyifeng.com/blog/2022/06/weekly-issue-210.html"
   },
   {
-    "issue": 178,
+    "issue": 194,
     "title": "科技爱好者周刊（第 209 期）：程序员是怎样的人",
     "url": "https://www.ruanyifeng.com/blog/2022/06/weekly-issue-209.html"
   },
   {
-    "issue": 179,
+    "issue": 195,
     "title": "科技爱好者周刊（第 208 期）：晋升制度的问题",
     "url": "https://www.ruanyifeng.com/blog/2022/05/weekly-issue-208.html"
   },
   {
-    "issue": 180,
+    "issue": 196,
     "title": "科技爱好者周刊（第 207 期）：汽车行业的顶峰可能过去了",
     "url": "https://www.ruanyifeng.com/blog/2022/05/weekly-issue-207.html"
   },
   {
-    "issue": 181,
+    "issue": 197,
     "title": "科技爱好者周刊（第 206 期）：如何走出失望和怀疑",
     "url": "https://www.ruanyifeng.com/blog/2022/05/weekly-issue-206.html"
   },
   {
-    "issue": 182,
+    "issue": 198,
     "title": "科技爱好者周刊（第 205 期）：互联网风口过去了吗？",
     "url": "https://www.ruanyifeng.com/blog/2022/05/weekly-issue-205.html"
   },
   {
-    "issue": 183,
+    "issue": 199,
     "title": "科技爱好者周刊（第 204 期）：如何度过疫情、裁员、还有战争",
     "url": "https://www.ruanyifeng.com/blog/2022/04/weekly-issue-204.html"
   },
   {
-    "issue": 184,
+    "issue": 200,
     "title": "科技爱好者周刊（第 203 期）：英国的名校签证，伯克利的计算机教育",
     "url": "https://www.ruanyifeng.com/blog/2022/04/weekly-issue-203.html"
   },
   {
-    "issue": 185,
+    "issue": 201,
     "title": "科技爱好者周刊（第 202 期）：三个有启发的学习方法",
     "url": "https://www.ruanyifeng.com/blog/2022/04/weekly-issue-202.html"
   },
   {
-    "issue": 186,
+    "issue": 202,
     "title": "科技爱好者周刊（第 201 期）：中国需要成立半导体部",
     "url": "https://www.ruanyifeng.com/blog/2022/04/weekly-issue-201.html"
   },
   {
-    "issue": 187,
+    "issue": 203,
     "title": "科技爱好者周刊（第 200 期）：低期望，多尝试",
     "url": "https://www.ruanyifeng.com/blog/2022/03/weekly-issue-200.html"
   },
   {
-    "issue": 188,
+    "issue": 204,
     "title": "科技爱好者周刊（第 199 期）：俄罗斯的 HTTPS 证书问题",
     "url": "https://www.ruanyifeng.com/blog/2022/03/weekly-issue-199.html"
   },
   {
-    "issue": 189,
+    "issue": 205,
     "title": "科技爱好者周刊（第 198 期）：美国制造是否可能",
     "url": "https://www.ruanyifeng.com/blog/2022/03/weekly-issue-198.html"
   },
   {
-    "issue": 190,
+    "issue": 206,
     "title": "科技爱好者周刊（第 197 期）：如果这个世界有快乐机",
     "url": "https://www.ruanyifeng.com/blog/2022/03/weekly-issue-197.html"
   },
   {
-    "issue": 191,
+    "issue": 207,
     "title": "科技爱好者周刊（第 196 期）：掌机的未来",
     "url": "https://www.ruanyifeng.com/blog/2022/02/weekly-issue-196.html"
   },
   {
-    "issue": 192,
+    "issue": 208,
     "title": "科技爱好者周刊（第 195 期）：你做过不在乎结果的项目吗？",
     "url": "https://www.ruanyifeng.com/blog/2022/02/weekly-issue-195.html"
   },
   {
-    "issue": 193,
+    "issue": 209,
     "title": "科技爱好者周刊（第 194 期）：悲观者正确，乐观者成功",
     "url": "https://www.ruanyifeng.com/blog/2022/02/weekly-issue-194.html"
   },
   {
-    "issue": 194,
+    "issue": 210,
     "title": "科技爱好者周刊（第 193 期）：前端与后端，谁更难？",
     "url": "https://www.ruanyifeng.com/blog/2022/01/weekly-issue-193.html"
   },
   {
-    "issue": 195,
+    "issue": 211,
     "title": "科技爱好者周刊（第 192 期）：最大的机会来自新技术",
     "url": "https://www.ruanyifeng.com/blog/2022/01/weekly-issue-192.html"
   },
   {
-    "issue": 196,
+    "issue": 212,
     "title": "科技爱好者周刊（第 191 期）：一个程序员的财务独立之路",
     "url": "https://www.ruanyifeng.com/blog/2022/01/weekly-issue-191.html"
   },
   {
-    "issue": 197,
+    "issue": 213,
     "title": "科技爱好者周刊（第 190 期）：产品化思维",
     "url": "https://www.ruanyifeng.com/blog/2021/12/weekly-issue-190.html"
   },
   {
-    "issue": 198,
+    "issue": 214,
     "title": "科技爱好者周刊（第 189 期）：下一个内卷的行业",
     "url": "https://www.ruanyifeng.com/blog/2021/12/weekly-issue-189.html"
   },
   {
-    "issue": 199,
+    "issue": 215,
     "title": "科技爱好者周刊（第 188 期）：音乐是反社交",
     "url": "https://www.ruanyifeng.com/blog/2021/12/weekly-issue-188.html"
   },
   {
-    "issue": 200,
+    "issue": 216,
     "title": "科技爱好者周刊（第 187 期）：元宇宙会成功吗",
     "url": "https://www.ruanyifeng.com/blog/2021/12/weekly-issue-187.html"
   },
   {
-    "issue": 201,
+    "issue": 217,
     "title": "科技爱好者周刊（第 186 期）：低纬度，高海拔，气候优势",
     "url": "https://www.ruanyifeng.com/blog/2021/12/weekly-issue-186.html"
   },
   {
-    "issue": 202,
+    "issue": 218,
     "title": "科技爱好者周刊（第 185 期）：美国宪法拍卖，一个区块链案例",
     "url": "https://www.ruanyifeng.com/blog/2021/11/weekly-issue-185.html"
   },
   {
-    "issue": 203,
+    "issue": 219,
     "title": "科技爱好者周刊（第 184 期）：政府的存储需求有多大？",
     "url": "https://www.ruanyifeng.com/blog/2021/11/weekly-issue-184.html"
   },
   {
-    "issue": 204,
+    "issue": 220,
     "title": "科技爱好者周刊（第 183 期）：腾讯的员工退休福利",
     "url": "https://www.ruanyifeng.com/blog/2021/11/weekly-issue-183.html"
   },
   {
-    "issue": 205,
+    "issue": 221,
     "title": "科技爱好者周刊（第 182 期）：新人优惠的风险",
     "url": "https://www.ruanyifeng.com/blog/2021/11/weekly-issue-182.html"
   },
   {
-    "issue": 206,
+    "issue": 222,
     "title": "科技爱好者周刊（第 181 期）：移动支付应该怎么设计？",
     "url": "https://www.ruanyifeng.com/blog/2021/10/weekly-issue-181.html"
   },
   {
-    "issue": 207,
+    "issue": 223,
     "title": "科技爱好者周刊（第 180 期）：你想住在中国哪里？",
     "url": "https://www.ruanyifeng.com/blog/2021/10/weekly-issue-180.html"
   },
   {
-    "issue": 208,
+    "issue": 224,
     "title": "科技爱好者周刊（第 179 期）：AR 技术的打开方式",
     "url": "https://www.ruanyifeng.com/blog/2021/10/weekly-issue-179.html"
   },
   {
-    "issue": 209,
+    "issue": 225,
     "title": "科技爱好者周刊（第 178 期）：家庭太阳能发电的春天",
     "url": "https://www.ruanyifeng.com/blog/2021/10/weekly-issue-178.html"
   },
   {
-    "issue": 210,
+    "issue": 226,
     "title": "科技爱好者周刊（第 177 期）：iPad 的真正用途",
     "url": "https://www.ruanyifeng.com/blog/2021/09/weekly-issue-177.html"
   },
   {
-    "issue": 211,
+    "issue": 227,
     "title": "科技爱好者周刊（第 176 期）：中国法院承认 GPL 吗？",
     "url": "https://www.ruanyifeng.com/blog/2021/09/weekly-issue-176.html"
   },
   {
-    "issue": 212,
+    "issue": 228,
     "title": "科技爱好者周刊（第 175 期）：知识广度 vs 知识深度",
     "url": "https://www.ruanyifeng.com/blog/2021/09/weekly-issue-175.html"
   },
   {
-    "issue": 213,
+    "issue": 229,
     "title": "科技爱好者周刊（第 174 期）：全能程序员 vs 特长程序员",
     "url": "https://www.ruanyifeng.com/blog/2021/09/weekly-issue-174.html"
   },
   {
-    "issue": 214,
+    "issue": 230,
     "title": "科技爱好者周刊（第 173 期）：网络收音机的设计",
     "url": "https://www.ruanyifeng.com/blog/2021/08/weekly-issue-173.html"
   },
   {
-    "issue": 215,
+    "issue": 231,
     "title": "科技爱好者周刊（第 172 期）：我们会死于气候灾难吗？",
     "url": "https://www.ruanyifeng.com/blog/2021/08/weekly-issue-172.html"
   },
   {
-    "issue": 216,
+    "issue": 232,
     "title": "科技爱好者周刊（第 171 期）：云服务流量有多贵？",
     "url": "https://www.ruanyifeng.com/blog/2021/08/weekly-issue-171.html"
   },
   {
-    "issue": 217,
+    "issue": 233,
     "title": "科技爱好者周刊（第 170 期）：软件订阅制的胜利",
     "url": "https://www.ruanyifeng.com/blog/2021/08/weekly-issue-170.html"
   },
   {
-    "issue": 218,
+    "issue": 234,
     "title": "科技爱好者周刊（第 169 期）：五菱汽车的产品设计",
     "url": "https://www.ruanyifeng.com/blog/2021/07/weekly-issue-169.html"
   },
   {
-    "issue": 219,
+    "issue": 235,
     "title": "科技爱好者周刊（第 168 期）：游戏《底特律：变人》",
     "url": "https://www.ruanyifeng.com/blog/2021/07/weekly-issue-168.html"
   },
   {
-    "issue": 220,
+    "issue": 236,
     "title": "科技爱好者周刊（第 167 期）：广告拦截器太过分了",
     "url": "https://www.ruanyifeng.com/blog/2021/07/weekly-issue-167.html"
   },
   {
-    "issue": 221,
+    "issue": 237,
     "title": "科技爱好者周刊（第 166 期）：视频学习胜过读书吗？",
     "url": "https://www.ruanyifeng.com/blog/2021/07/weekly-issue-166.html"
   },
   {
-    "issue": 222,
+    "issue": 238,
     "title": "科技爱好者周刊（第 165 期）：全端 App 的时代",
     "url": "https://www.ruanyifeng.com/blog/2021/07/weekly-issue-165.html"
   },
   {
-    "issue": 223,
+    "issue": 239,
     "title": "科技爱好者周刊（第 164 期）：培训班 vs 大学，求职成功率比较",
     "url": "https://www.ruanyifeng.com/blog/2021/06/weekly-issue-164.html"
   },
   {
-    "issue": 224,
+    "issue": 240,
     "title": "科技爱好者周刊（第 163 期）：你的城市有多少张病床？",
     "url": "https://www.ruanyifeng.com/blog/2021/06/weekly-issue-163.html"
   },
   {
-    "issue": 225,
+    "issue": 241,
     "title": "科技爱好者周刊（第 162 期）：生活就像《吃豆人》游戏",
     "url": "https://www.ruanyifeng.com/blog/2021/06/weekly-issue-162.html"
   },
   {
-    "issue": 226,
+    "issue": 242,
     "title": "科技爱好者周刊（第 161 期）：再见了，学术硕士",
     "url": "https://www.ruanyifeng.com/blog/2021/06/weekly-issue-161.html"
   },
   {
-    "issue": 227,
+    "issue": 243,
     "title": "科技爱好者周刊（第 160 期）：中年码农的困境",
     "url": "https://www.ruanyifeng.com/blog/2021/05/weekly-issue-160.html"
   },
   {
-    "issue": 228,
+    "issue": 244,
     "title": "科技爱好者周刊（第 159 期）：游戏开发者的年薪",
     "url": "https://www.ruanyifeng.com/blog/2021/05/weekly-issue-159.html"
   },
   {
-    "issue": 229,
+    "issue": 245,
     "title": "科技爱好者周刊（第 158 期）：内容渠道的贬值",
     "url": "https://www.ruanyifeng.com/blog/2021/05/weekly-issue-158.html"
   },
   {
-    "issue": 230,
+    "issue": 246,
     "title": "科技爱好者周刊（第 157 期）：KK 给年轻人的建议",
     "url": "https://www.ruanyifeng.com/blog/2021/05/weekly-issue-157.html"
   },
   {
-    "issue": 231,
+    "issue": 247,
     "title": "科技爱好者周刊（第 156 期）：显卡缺货与异业竞争",
     "url": "https://www.ruanyifeng.com/blog/2021/04/weekly-issue-156.html"
   },
   {
-    "issue": 232,
+    "issue": 248,
     "title": "科技爱好者周刊（第 155 期）：数字货币是打破美元霸权的武器吗？",
     "url": "https://www.ruanyifeng.com/blog/2021/04/weekly-issue-155.html"
   },
   {
-    "issue": 233,
+    "issue": 249,
     "title": "科技爱好者周刊（第 154 期）：1982年的信息社会预言",
     "url": "https://www.ruanyifeng.com/blog/2021/04/weekly-issue-154.html"
   },
   {
-    "issue": 234,
+    "issue": 250,
     "title": "科技爱好者周刊（第 153 期）：机器翻译是对译者的侮辱吗？",
     "url": "https://www.ruanyifeng.com/blog/2021/04/weekly-issue-153.html"
   },
   {
-    "issue": 235,
+    "issue": 251,
     "title": "科技爱好者周刊（第 152 期）：从北大到技校",
     "url": "https://www.ruanyifeng.com/blog/2021/04/weekly-issue-152.html"
   },
   {
-    "issue": 236,
+    "issue": 252,
     "title": "科技爱好者周刊（第 151 期）：NFT 是什么，听说能赚钱",
     "url": "https://www.ruanyifeng.com/blog/2021/03/weekly-issue-151.html"
   },
   {
-    "issue": 237,
+    "issue": 253,
     "title": "科技爱好者周刊（第 150 期）：当音乐还是稀缺的时候",
     "url": "https://www.ruanyifeng.com/blog/2021/03/weekly-issue-150.html"
   },
   {
-    "issue": 238,
+    "issue": 254,
     "title": "科技爱好者周刊（第 149 期）：新能源汽车，谁会是赢家？",
     "url": "https://www.ruanyifeng.com/blog/2021/03/weekly-issue-149.html"
   },
   {
-    "issue": 239,
+    "issue": 255,
     "title": "科技爱好者周刊（第 148 期）：微增长时代",
     "url": "https://www.ruanyifeng.com/blog/2021/03/weekly-issue-148.html"
   },
   {
-    "issue": 240,
+    "issue": 256,
     "title": "科技爱好者周刊（第 147 期）：寻找你愿意忍受的痛苦",
     "url": "https://www.ruanyifeng.com/blog/2021/02/weekly-issue-147.html"
   },
   {
-    "issue": 241,
+    "issue": 257,
     "title": "科技爱好者周刊（第 146 期）：网课应该怎么上？",
     "url": "https://www.ruanyifeng.com/blog/2021/02/weekly-issue-146.html"
   },
   {
-    "issue": 242,
+    "issue": 258,
     "title": "科技爱好者周刊（第 145 期）：大家不出门，经济怎么办？",
     "url": "https://www.ruanyifeng.com/blog/2021/02/weekly-issue-145.html"
   },
   {
-    "issue": 243,
+    "issue": 259,
     "title": "科技爱好者周刊（第 144 期）：提高收入的根本途径",
     "url": "https://www.ruanyifeng.com/blog/2021/01/weekly-issue-144.html"
   },
   {
-    "issue": 244,
+    "issue": 260,
     "title": "科技爱好者周刊（第 143 期）：世界尽头与冷酷仙境",
     "url": "https://www.ruanyifeng.com/blog/2021/01/weekly-issue-143.html"
   },
   {
-    "issue": 245,
+    "issue": 261,
     "title": "科技爱好者周刊（第 142 期）：2020年才是21世纪元年",
     "url": "https://www.ruanyifeng.com/blog/2021/01/weekly-issue-142.html"
   },
   {
-    "issue": 246,
+    "issue": 262,
     "title": "科技爱好者周刊（第 141 期）：封闭系统的胜利",
     "url": "https://www.ruanyifeng.com/blog/2021/01/weekly-issue-141.html"
   },
   {
-    "issue": 247,
+    "issue": 263,
     "title": "科技爱好者周刊（第 140 期）：印度人的工资是多少？",
     "url": "https://www.ruanyifeng.com/blog/2020/12/weekly-issue-140.html"
   },
   {
-    "issue": 248,
+    "issue": 264,
     "title": "科技爱好者周刊（第 139 期）：生物学的可怕进展",
     "url": "https://www.ruanyifeng.com/blog/2020/12/weekly-issue-139.html"
   },
   {
-    "issue": 249,
+    "issue": 265,
     "title": "科技爱好者周刊（第 138 期）：失业难以避免，重构人生规划",
     "url": "https://www.ruanyifeng.com/blog/2020/12/weekly-issue-138.html"
   },
   {
-    "issue": 250,
+    "issue": 266,
     "title": "科技爱好者周刊（第 137 期）：Slack 被收购，以及企业的技术选型",
     "url": "https://www.ruanyifeng.com/blog/2020/12/weekly-issue-137.html"
   },
   {
-    "issue": 251,
+    "issue": 267,
     "title": "科技爱好者周刊（第 136 期）：利特伍德奇迹定律",
     "url": "https://www.ruanyifeng.com/blog/2020/12/weekly-issue-136.html"
   },
   {
-    "issue": 252,
+    "issue": 268,
     "title": "科技爱好者周刊（第 135 期）：什么行业适合创业？",
     "url": "https://www.ruanyifeng.com/blog/2020/11/weekly-issue-135.html"
   },
   {
-    "issue": 253,
+    "issue": 269,
     "title": "科技爱好者周刊（第 134 期）：未来的游戏业比现在大100倍",
     "url": "https://www.ruanyifeng.com/blog/2020/11/weekly-issue-134.html"
   },
   {
-    "issue": 254,
+    "issue": 270,
     "title": "科技爱好者周刊（第 133 期）：贵州变瑞士，有没有可能？",
     "url": "https://www.ruanyifeng.com/blog/2020/11/weekly-issue-133.html"
   },
   {
-    "issue": 255,
+    "issue": 271,
     "title": "科技爱好者周刊（第 132 期）：快能力和慢能力",
     "url": "https://www.ruanyifeng.com/blog/2020/11/weekly-issue-132.html"
   },
   {
-    "issue": 256,
+    "issue": 272,
     "title": "科技爱好者周刊（第 131 期）：你的头脑是二值逻辑，还是三值逻辑？",
     "url": "https://www.ruanyifeng.com/blog/2020/10/weekly-issue-131.html"
   },
   {
-    "issue": 257,
+    "issue": 273,
     "title": "科技爱好者周刊（第 130 期）：低龄化的互联网",
     "url": "https://www.ruanyifeng.com/blog/2020/10/weekly-issue-130.html"
   },
   {
-    "issue": 258,
+    "issue": 274,
     "title": "科技爱好者周刊（第 129 期）：创业的凸函数和凹函数",
     "url": "https://www.ruanyifeng.com/blog/2020/10/weekly-issue-129.html"
   },
   {
-    "issue": 259,
+    "issue": 275,
     "title": "科技爱好者周刊（第 128 期）：这个社会是否正在变成\"赛博朋克\"？",
     "url": "https://www.ruanyifeng.com/blog/2020/10/weekly-issue-128.html"
   },
   {
-    "issue": 260,
+    "issue": 276,
     "title": "科技爱好者周刊（第 127 期）：未来人人开发软件，几乎没人编码",
     "url": "https://www.ruanyifeng.com/blog/2020/09/weekly-issue-127.html"
   },
   {
-    "issue": 261,
+    "issue": 277,
     "title": "科技爱好者周刊（第 126 期）：内卷化是什么？",
     "url": "https://www.ruanyifeng.com/blog/2020/09/weekly-issue-126.html"
   },
   {
-    "issue": 262,
+    "issue": 278,
     "title": "科技爱好者周刊（第 125 期）：数字人民币要取代谁",
     "url": "https://www.ruanyifeng.com/blog/2020/09/weekly-issue-125.html"
   },
   {
-    "issue": 263,
+    "issue": 279,
     "title": "科技爱好者周刊（第 124 期）：华为如何考核员工",
     "url": "https://www.ruanyifeng.com/blog/2020/09/weekly-issue-124.html"
   },
   {
-    "issue": 264,
+    "issue": 280,
     "title": "科技爱好者周刊（第 123 期）：互联网公司与湘军的军制",
     "url": "https://www.ruanyifeng.com/blog/2020/09/weekly-issue-123.html"
   },
   {
-    "issue": 265,
+    "issue": 281,
     "title": "科技爱好者周刊（第 122 期）：谈谈互联网公司的高估值",
     "url": "https://www.ruanyifeng.com/blog/2020/08/weekly-issue-122.html"
   },
   {
-    "issue": 266,
+    "issue": 282,
     "title": "科技爱好者周刊（第 121 期）：为什么人类没有越来越闲？",
     "url": "https://www.ruanyifeng.com/blog/2020/08/weekly-issue-121.html"
   },
   {
-    "issue": 267,
+    "issue": 283,
     "title": "科技爱好者周刊（第 120 期）：只有开放才能打败封锁",
     "url": "https://www.ruanyifeng.com/blog/2020/08/weekly-issue-120.html"
   },
   {
-    "issue": 268,
+    "issue": 284,
     "title": "科技爱好者周刊（第 119 期）：降雨量和保险博弈",
     "url": "https://www.ruanyifeng.com/blog/2020/08/weekly-issue-119.html"
   },
   {
-    "issue": 269,
+    "issue": 285,
     "title": "科技爱好者周刊（第 118 期）：高考志愿怎么填",
     "url": "https://www.ruanyifeng.com/blog/2020/07/weekly-issue-118.html"
   },
   {
-    "issue": 270,
+    "issue": 286,
     "title": "科技爱好者周刊（第 117 期）：我不想让你记住我的脸",
     "url": "https://www.ruanyifeng.com/blog/2020/07/weekly-issue-117.html"
   },
   {
-    "issue": 271,
+    "issue": 287,
     "title": "科技爱好者周刊（第 116 期）：世界的未来是一个火药桶",
     "url": "https://www.ruanyifeng.com/blog/2020/07/weekly-issue-116.html"
   },
   {
-    "issue": 272,
+    "issue": 288,
     "title": "科技爱好者周刊（第 115 期）：保护你的 DNA，不要泄漏",
     "url": "https://www.ruanyifeng.com/blog/2020/07/weekly-issue-115.html"
   },
   {
-    "issue": 273,
+    "issue": 289,
     "title": "科技爱好者周刊（第 114 期）：U 盘化生存和 Uber-job",
     "url": "https://www.ruanyifeng.com/blog/2020/07/weekly-issue-114.html"
   },
   {
-    "issue": 274,
+    "issue": 290,
     "title": "科技爱好者周刊（第 113 期）：暴力犯罪为什么越来越少？",
     "url": "https://www.ruanyifeng.com/blog/2020/06/weekly-issue-113.html"
   },
   {
-    "issue": 275,
+    "issue": 291,
     "title": "科技爱好者周刊（第 112 期）：如何培养领导力",
     "url": "https://www.ruanyifeng.com/blog/2020/06/weekly-issue-112.html"
   },
   {
-    "issue": 276,
+    "issue": 292,
     "title": "科技爱好者周刊（第 111 期）：智能电视的误区",
     "url": "https://www.ruanyifeng.com/blog/2020/06/weekly-issue-111.html"
   },
   {
-    "issue": 277,
+    "issue": 293,
     "title": "科技爱好者周刊（第 110 期）：如果不能去美国上市",
     "url": "https://www.ruanyifeng.com/blog/2020/06/weekly-issue-110.html"
   },
   {
-    "issue": 278,
+    "issue": 294,
     "title": "科技爱好者周刊（第 109 期）：播客的价值",
     "url": "https://www.ruanyifeng.com/blog/2020/05/weekly-issue-109.html"
   },
   {
-    "issue": 279,
+    "issue": 295,
     "title": "科技爱好者周刊（第 108 期）：阵地战与奇袭战",
     "url": "https://www.ruanyifeng.com/blog/2020/05/weekly-issue-108.html"
   },
   {
-    "issue": 280,
+    "issue": 296,
     "title": "科技爱好者周刊（第 107 期）：致富与杠杆",
     "url": "https://www.ruanyifeng.com/blog/2020/05/weekly-issue-107.html"
   },
   {
-    "issue": 281,
+    "issue": 297,
     "title": "科技爱好者周刊（第 106 期）：数字游民",
     "url": "https://www.ruanyifeng.com/blog/2020/05/weekly-issue-106.html"
   },
   {
-    "issue": 282,
+    "issue": 298,
     "title": "科技爱好者周刊：第 105 期",
     "url": "https://www.ruanyifeng.com/blog/2020/04/weekly-issue-105.html"
   },
   {
-    "issue": 283,
+    "issue": 299,
     "title": "科技爱好者周刊：第 104 期",
     "url": "https://www.ruanyifeng.com/blog/2020/04/weekly-issue-104.html"
   },
   {
-    "issue": 284,
+    "issue": 300,
     "title": "科技爱好者周刊：第 103 期",
     "url": "https://www.ruanyifeng.com/blog/2020/04/weekly-issue-103.html"
   },
   {
-    "issue": 285,
+    "issue": 301,
     "title": "科技爱好者周刊：第 102 期",
     "url": "https://www.ruanyifeng.com/blog/2020/04/weekly-issue-102.html"
   },
   {
-    "issue": 286,
+    "issue": 302,
     "title": "科技爱好者周刊：第 101 期",
     "url": "https://www.ruanyifeng.com/blog/2020/04/weekly-issue-101.html"
   },
   {
-    "issue": 287,
+    "issue": 303,
     "title": "科技爱好者周刊：第 100 期",
     "url": "https://www.ruanyifeng.com/blog/2020/03/weekly-issue-100.html"
   },
   {
-    "issue": 288,
+    "issue": 304,
     "title": "科技爱好者周刊：第 99 期",
     "url": "https://www.ruanyifeng.com/blog/2020/03/weekly-issue-99.html"
   },
   {
-    "issue": 289,
+    "issue": 305,
     "title": "科技爱好者周刊：第 98 期",
     "url": "https://www.ruanyifeng.com/blog/2020/03/weekly-issue-98.html"
   },
   {
-    "issue": 290,
+    "issue": 306,
     "title": "科技爱好者周刊：第 97 期",
     "url": "https://www.ruanyifeng.com/blog/2020/03/weekly-issue-97.html"
   },
   {
-    "issue": 291,
+    "issue": 307,
     "title": "科技爱好者周刊：第 96 期",
     "url": "https://www.ruanyifeng.com/blog/2020/02/weekly-issue-96.html"
   },
   {
-    "issue": 292,
+    "issue": 308,
     "title": "科技爱好者周刊：第 95 期",
     "url": "https://www.ruanyifeng.com/blog/2020/02/weekly-issue-95.html"
   },
   {
-    "issue": 293,
+    "issue": 309,
     "title": "科技爱好者周刊：第 94 期",
     "url": "https://www.ruanyifeng.com/blog/2020/02/weekly-issue-94.html"
   },
   {
-    "issue": 294,
+    "issue": 310,
     "title": "科技爱好者周刊：第 93 期",
     "url": "https://www.ruanyifeng.com/blog/2020/02/weekly-issue-93.html"
   },
   {
-    "issue": 295,
+    "issue": 311,
     "title": "科技爱好者周刊：第 92 期",
     "url": "https://www.ruanyifeng.com/blog/2020/01/weekly-issue-92.html"
   },
   {
-    "issue": 296,
+    "issue": 312,
     "title": "科技爱好者周刊：第 91 期",
     "url": "https://www.ruanyifeng.com/blog/2020/01/weekly-issue-91.html"
   },
   {
-    "issue": 297,
+    "issue": 313,
     "title": "科技爱好者周刊：第 90 期",
     "url": "https://www.ruanyifeng.com/blog/2020/01/weekly-issue-90.html"
   },
   {
-    "issue": 298,
+    "issue": 314,
     "title": "科技爱好者周刊：第 89 期",
     "url": "https://www.ruanyifeng.com/blog/2020/01/weekly-issue-89.html"
   },
   {
-    "issue": 299,
+    "issue": 315,
     "title": "科技爱好者周刊：第 88 期",
     "url": "https://www.ruanyifeng.com/blog/2019/12/weekly-issue-88.html"
   },
   {
-    "issue": 300,
+    "issue": 316,
     "title": "科技爱好者周刊：第 87 期",
     "url": "https://www.ruanyifeng.com/blog/2019/12/weekly-issue-87.html"
   },
   {
-    "issue": 301,
+    "issue": 317,
     "title": "科技爱好者周刊：第 86 期",
     "url": "https://www.ruanyifeng.com/blog/2019/12/weekly-issue-86.html"
   },
   {
-    "issue": 302,
+    "issue": 318,
     "title": "科技爱好者周刊：第 85 期",
     "url": "https://www.ruanyifeng.com/blog/2019/12/weekly-issue-85.html"
   },
   {
-    "issue": 303,
+    "issue": 319,
     "title": "科技爱好者周刊：第 84 期",
     "url": "https://www.ruanyifeng.com/blog/2019/11/weekly-issue-84.html"
   },
   {
-    "issue": 304,
+    "issue": 320,
     "title": "科技爱好者周刊：第 83 期",
     "url": "https://www.ruanyifeng.com/blog/2019/11/weekly-issue-83.html"
   },
   {
-    "issue": 305,
+    "issue": 321,
     "title": "科技爱好者周刊：第 82 期",
     "url": "https://www.ruanyifeng.com/blog/2019/11/weekly-issue-82.html"
   },
   {
-    "issue": 306,
+    "issue": 322,
     "title": "科技爱好者周刊：第 81 期",
     "url": "https://www.ruanyifeng.com/blog/2019/11/weekly-issue-81.html"
   },
   {
-    "issue": 307,
+    "issue": 323,
     "title": "科技爱好者周刊：第 80 期",
     "url": "https://www.ruanyifeng.com/blog/2019/11/weekly-issue-80.html"
   },
   {
-    "issue": 308,
+    "issue": 324,
     "title": "科技爱好者周刊：第 79 期",
     "url": "https://www.ruanyifeng.com/blog/2019/10/weekly-issue-79.html"
   },
   {
-    "issue": 309,
+    "issue": 325,
     "title": "科技爱好者周刊：第 78 期",
     "url": "https://www.ruanyifeng.com/blog/2019/10/weekly-issue-78.html"
   },
   {
-    "issue": 310,
+    "issue": 326,
     "title": "科技爱好者周刊：第 77 期",
     "url": "https://www.ruanyifeng.com/blog/2019/10/weekly-issue-77.html"
   },
   {
-    "issue": 311,
+    "issue": 327,
     "title": "科技爱好者周刊：第 76 期",
     "url": "https://www.ruanyifeng.com/blog/2019/10/weekly-issue-76.html"
   },
   {
-    "issue": 312,
+    "issue": 328,
     "title": "科技爱好者周刊：第 75 期",
     "url": "https://www.ruanyifeng.com/blog/2019/09/weekly-issue-75.html"
   },
   {
-    "issue": 313,
+    "issue": 329,
     "title": "科技爱好者周刊：第 74 期",
     "url": "https://www.ruanyifeng.com/blog/2019/09/weekly-issue-74.html"
   },
   {
-    "issue": 314,
+    "issue": 330,
     "title": "科技爱好者周刊：第 73 期",
     "url": "https://www.ruanyifeng.com/blog/2019/09/weekly-issue-73.html"
   },
   {
-    "issue": 315,
+    "issue": 331,
     "title": "科技爱好者周刊：第 72 期",
     "url": "https://www.ruanyifeng.com/blog/2019/09/weekly-issue-72.html"
   },
   {
-    "issue": 316,
+    "issue": 332,
     "title": "科技爱好者周刊：第 71 期",
     "url": "https://www.ruanyifeng.com/blog/2019/08/weekly-issue-71.html"
   },
   {
-    "issue": 317,
+    "issue": 333,
     "title": "科技爱好者周刊：第 70 期",
     "url": "https://www.ruanyifeng.com/blog/2019/08/weekly-issue-70.html"
   },
   {
-    "issue": 318,
+    "issue": 334,
     "title": "科技爱好者周刊：第 69 期",
     "url": "https://www.ruanyifeng.com/blog/2019/08/weekly-issue-69.html"
   },
   {
-    "issue": 319,
+    "issue": 335,
     "title": "科技爱好者周刊：第 68 期",
     "url": "https://www.ruanyifeng.com/blog/2019/08/weekly-issue-68.html"
   },
   {
-    "issue": 320,
+    "issue": 336,
     "title": "科技爱好者周刊：第 67 期",
     "url": "https://www.ruanyifeng.com/blog/2019/08/weekly-issue-67.html"
   },
   {
-    "issue": 321,
+    "issue": 337,
     "title": "科技爱好者周刊：第 66 期",
     "url": "https://www.ruanyifeng.com/blog/2019/07/weekly-issue-66.html"
   },
   {
-    "issue": 322,
+    "issue": 338,
     "title": "科技爱好者周刊（第 65 期）：周刊开设\"谁在招人\"的招聘服务",
     "url": "https://www.ruanyifeng.com/blog/2019/07/weekly-issue-65.html"
   },
   {
-    "issue": 323,
+    "issue": 339,
     "title": "科技爱好者周刊：第 64 期",
     "url": "https://www.ruanyifeng.com/blog/2019/07/weekly-issue-64.html"
   },
   {
-    "issue": 324,
+    "issue": 340,
     "title": "科技爱好者周刊：第 63 期",
     "url": "https://www.ruanyifeng.com/blog/2019/07/weekly-issue-63.html"
   },
   {
-    "issue": 325,
+    "issue": 341,
     "title": "科技爱好者周刊：第 62 期",
     "url": "https://www.ruanyifeng.com/blog/2019/06/weekly-issue-62.html"
   },
   {
-    "issue": 326,
+    "issue": 342,
     "title": "科技爱好者周刊：第 61 期",
     "url": "https://www.ruanyifeng.com/blog/2019/06/weekly-issue-61.html"
   },
   {
-    "issue": 327,
+    "issue": 343,
     "title": "每周分享第 60 期",
     "url": "https://www.ruanyifeng.com/blog/2019/06/weekly-issue-60.html"
   },
   {
-    "issue": 328,
+    "issue": 344,
     "title": "每周分享第 59 期",
     "url": "https://www.ruanyifeng.com/blog/2019/06/weekly-issue-59.html"
   },
   {
-    "issue": 329,
+    "issue": 345,
     "title": "每周分享第 58 期",
     "url": "https://www.ruanyifeng.com/blog/2019/05/weekly-issue-58.html"
   },
   {
-    "issue": 330,
+    "issue": 346,
     "title": "每周分享第 57 期",
     "url": "https://www.ruanyifeng.com/blog/2019/05/weekly-issue-57.html"
   },
   {
-    "issue": 331,
+    "issue": 347,
     "title": "每周分享第 56 期",
     "url": "https://www.ruanyifeng.com/blog/2019/05/weekly-issue-56.html"
   },
   {
-    "issue": 332,
+    "issue": 348,
     "title": "每周分享第 55 期",
     "url": "https://www.ruanyifeng.com/blog/2019/05/weekly-issue-55.html"
   },
   {
-    "issue": 333,
+    "issue": 349,
     "title": "每周分享第 54 期",
     "url": "https://www.ruanyifeng.com/blog/2019/05/weekly-issue-54.html"
   },
   {
-    "issue": 334,
+    "issue": 350,
     "title": "每周分享第 53 期",
     "url": "https://www.ruanyifeng.com/blog/2019/04/weekly-issue-53.html"
   },
   {
-    "issue": 335,
+    "issue": 351,
     "title": "每周分享第 52 期",
     "url": "https://www.ruanyifeng.com/blog/2019/04/weekly-issue-52.html"
   },
   {
-    "issue": 336,
+    "issue": 352,
     "title": "每周分享第 51 期",
     "url": "https://www.ruanyifeng.com/blog/2019/04/weekly-issue-51.html"
   },
   {
-    "issue": 337,
+    "issue": 353,
     "title": "每周分享第 50 期",
     "url": "https://www.ruanyifeng.com/blog/2019/04/weekly-issue-50.html"
   },
   {
-    "issue": 338,
+    "issue": 354,
     "title": "每周分享第 49 期",
     "url": "https://www.ruanyifeng.com/blog/2019/03/weekly-issue-49.html"
   },
   {
-    "issue": 339,
+    "issue": 355,
     "title": "每周分享第 48 期",
     "url": "https://www.ruanyifeng.com/blog/2019/03/weekly-issue-48.html"
   },
   {
-    "issue": 340,
+    "issue": 356,
     "title": "每周分享第 47 期",
     "url": "https://www.ruanyifeng.com/blog/2019/03/weekly-issue-47.html"
   },
   {
-    "issue": 341,
+    "issue": 357,
     "title": "每周分享第 46 期",
     "url": "https://www.ruanyifeng.com/blog/2019/03/weekly-issue-46.html"
   },
   {
-    "issue": 342,
+    "issue": 358,
     "title": "每周分享第 45 期",
     "url": "https://www.ruanyifeng.com/blog/2019/03/weekly-issue-45.html"
   },
   {
-    "issue": 343,
+    "issue": 359,
     "title": "每周分享第 44 期",
     "url": "https://www.ruanyifeng.com/blog/2019/02/weekly-issue-44.html"
   },
   {
-    "issue": 344,
+    "issue": 360,
     "title": "每周分享第 43 期",
     "url": "https://www.ruanyifeng.com/blog/2019/02/weekly-issue-43.html"
   },
   {
-    "issue": 345,
+    "issue": 361,
     "title": "每周分享第 42 期",
     "url": "https://www.ruanyifeng.com/blog/2019/02/weekly-issue-42.html"
   },
   {
-    "issue": 346,
+    "issue": 362,
     "title": "每周分享第 41 期",
     "url": "https://www.ruanyifeng.com/blog/2019/01/weekly-issue-41.html"
   },
   {
-    "issue": 347,
+    "issue": 363,
     "title": "每周分享第 40 期",
     "url": "https://www.ruanyifeng.com/blog/2019/01/weekly-issue-40.html"
   },
   {
-    "issue": 348,
+    "issue": 364,
     "title": "每周分享第 39 期",
     "url": "https://www.ruanyifeng.com/blog/2019/01/weekly-issue-39.html"
   },
   {
-    "issue": 349,
+    "issue": 365,
     "title": "每周分享第 38 期",
     "url": "https://www.ruanyifeng.com/blog/2019/01/weekly-issue-38.html"
   },
   {
-    "issue": 350,
+    "issue": 366,
     "title": "每周分享第 37 期",
     "url": "https://www.ruanyifeng.com/blog/2018/12/weekly-issue-37.html"
   },
   {
-    "issue": 351,
+    "issue": 367,
     "title": "每周分享第 36 期",
     "url": "https://www.ruanyifeng.com/blog/2018/12/weekly-issue-36.html"
   },
   {
-    "issue": 352,
+    "issue": 368,
     "title": "每周分享第 35 期",
     "url": "https://www.ruanyifeng.com/blog/2018/12/weekly-issue-35.html"
   },
   {
-    "issue": 353,
+    "issue": 369,
     "title": "每周分享第 34 期",
     "url": "https://www.ruanyifeng.com/blog/2018/12/weekly-issue-34.html"
   },
   {
-    "issue": 354,
+    "issue": 370,
     "title": "每周分享第 33 期",
     "url": "https://www.ruanyifeng.com/blog/2018/11/weekly-issue-33.html"
   },
   {
-    "issue": 355,
+    "issue": 371,
     "title": "每周分享第 32 期",
     "url": "https://www.ruanyifeng.com/blog/2018/11/weekly-issue-32.html"
   },
   {
-    "issue": 356,
+    "issue": 372,
     "title": "每周分享第 31 期",
     "url": "https://www.ruanyifeng.com/blog/2018/11/weekly-issue-31.html"
   },
   {
-    "issue": 357,
+    "issue": 373,
     "title": "每周分享第 30 期",
     "url": "https://www.ruanyifeng.com/blog/2018/11/weekly-issue-30.html"
   },
   {
-    "issue": 358,
+    "issue": 374,
     "title": "每周分享第 29 期",
     "url": "https://www.ruanyifeng.com/blog/2018/11/weekly-issue-29.html"
   },
   {
-    "issue": 359,
+    "issue": 375,
     "title": "每周分享第 28 期",
     "url": "https://www.ruanyifeng.com/blog/2018/10/weekly-issue-28.html"
   },
   {
-    "issue": 360,
+    "issue": 376,
     "title": "每周分享第 27 期",
     "url": "https://www.ruanyifeng.com/blog/2018/10/weekly-issue-27.html"
   },
   {
-    "issue": 361,
+    "issue": 377,
     "title": "每周分享第 26 期",
     "url": "https://www.ruanyifeng.com/blog/2018/10/weekly-issue-26.html"
   },
   {
-    "issue": 362,
+    "issue": 378,
     "title": "每周分享第 25 期",
     "url": "https://www.ruanyifeng.com/blog/2018/10/weekly-issue-25.html"
   },
   {
-    "issue": 363,
+    "issue": 379,
     "title": "每周分享第 24 期",
     "url": "https://www.ruanyifeng.com/blog/2018/09/weekly-issue-24.html"
   },
   {
-    "issue": 364,
+    "issue": 380,
     "title": "每周分享第 23 期",
     "url": "https://www.ruanyifeng.com/blog/2018/09/weekly-issue-23.html"
   },
   {
-    "issue": 365,
+    "issue": 381,
     "title": "每周分享第 22 期",
     "url": "https://www.ruanyifeng.com/blog/2018/09/weekly-issue-22.html"
   },
   {
-    "issue": 366,
+    "issue": 382,
     "title": "每周分享第 21 期",
     "url": "https://www.ruanyifeng.com/blog/2018/09/weekly-issue-21.html"
   },
   {
-    "issue": 367,
+    "issue": 383,
     "title": "每周分享第 20 期",
     "url": "https://www.ruanyifeng.com/blog/2018/08/weekly-issue-20.html"
   },
   {
-    "issue": 368,
+    "issue": 384,
     "title": "每周分享第 19 期",
     "url": "https://www.ruanyifeng.com/blog/2018/08/weekly-issue-19.html"
   },
   {
-    "issue": 369,
+    "issue": 385,
     "title": "每周分享第 18 期",
     "url": "https://www.ruanyifeng.com/blog/2018/08/weekly-issue-18.html"
   },
   {
-    "issue": 370,
+    "issue": 386,
     "title": "每周分享第 17 期",
     "url": "https://www.ruanyifeng.com/blog/2018/08/weekly-issue-17.html"
   },
   {
-    "issue": 371,
+    "issue": 387,
     "title": "每周分享第 16 期",
     "url": "https://www.ruanyifeng.com/blog/2018/08/weekly-issue-16.html"
   },
   {
-    "issue": 372,
+    "issue": 388,
     "title": "每周分享第 15 期",
     "url": "https://www.ruanyifeng.com/blog/2018/07/weekly-issue-15.html"
   },
   {
-    "issue": 373,
+    "issue": 389,
     "title": "每周分享第 14 期",
     "url": "https://www.ruanyifeng.com/blog/2018/07/weekly-issue-14.html"
   },
   {
-    "issue": 374,
+    "issue": 390,
     "title": "每周分享第 13 期：周刊为什么只谈技术？",
     "url": "https://www.ruanyifeng.com/blog/2018/07/weekly-issue-13.html"
   },
   {
-    "issue": 375,
+    "issue": 391,
     "title": "每周分享第 12 期",
     "url": "https://www.ruanyifeng.com/blog/2018/07/weekly-issue-12.html"
   },
   {
-    "issue": 376,
+    "issue": 392,
     "title": "每周分享第 11 期",
     "url": "https://www.ruanyifeng.com/blog/2018/06/weekly-issue-11.html"
   },
   {
-    "issue": 377,
+    "issue": 393,
     "title": "每周分享第 10 期",
     "url": "https://www.ruanyifeng.com/blog/2018/06/weekly-issue-10.html"
   },
   {
-    "issue": 378,
+    "issue": 394,
     "title": "每周分享第 9 期",
     "url": "https://www.ruanyifeng.com/blog/2018/06/weekly-issue-9.html"
   },
   {
-    "issue": 379,
+    "issue": 395,
     "title": "每周分享第 8 期",
     "url": "https://www.ruanyifeng.com/blog/2018/06/weekly-issue-8.html"
   },
   {
-    "issue": 380,
+    "issue": 396,
     "title": "每周分享第 7 期",
     "url": "https://www.ruanyifeng.com/blog/2018/06/weekly-issue-7.html"
   },
   {
-    "issue": 381,
+    "issue": 397,
     "title": "每周分享第 6 期",
     "url": "https://www.ruanyifeng.com/blog/2018/05/weekly-issue-6.html"
   },
   {
-    "issue": 382,
+    "issue": 398,
     "title": "每周分享第 5 期",
     "url": "https://www.ruanyifeng.com/blog/2018/05/weekly-issue-5.html"
   },
   {
-    "issue": 383,
+    "issue": 399,
     "title": "每周分享第 4 期",
     "url": "https://www.ruanyifeng.com/blog/2018/05/weekly-issue-4.html"
   },
   {
-    "issue": 384,
+    "issue": 400,
     "title": "每周分享第 3 期",
     "url": "https://www.ruanyifeng.com/blog/2018/05/weekly-issue-3.html"
   },
   {
-    "issue": 385,
+    "issue": 401,
     "title": "每周分享第 2 期",
     "url": "https://www.ruanyifeng.com/blog/2018/04/weekly-issue-2.html"
   },
   {
-    "issue": 386,
+    "issue": 402,
     "title": "每周分享第 1 期",
     "url": "https://www.ruanyifeng.com/blog/2018/04/weekly-issue-1.html"
   }

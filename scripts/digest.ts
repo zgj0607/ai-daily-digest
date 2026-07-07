@@ -10,9 +10,12 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1';
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
 const FEED_FETCH_TIMEOUT_MS = 15_000;
-const DEFAULT_FEED_CONCURRENCY = 80;
-const GEMINI_BATCH_SIZE = 10;
-const DEFAULT_AI_CONCURRENCY = 16;
+const ARTICLE_FETCH_TIMEOUT_MS = 20_000;
+const DEFAULT_FEED_CONCURRENCY = 50;
+const GEMINI_BATCH_SIZE = 15;
+const DEFAULT_AI_CONCURRENCY = 6;
+const DEFAULT_CLIPPINGS_CONCURRENCY = 4;
+const DEFAULT_CLIPPINGS_DIR = '/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings';
 
 const RSS_FEEDS_FILE = new URL('../rss.txt', import.meta.url);
 
@@ -681,23 +684,23 @@ function buildSummaryPrompt(
     ? '请用中文撰写摘要和推荐理由。如果原文是英文，请翻译为中文。标题翻译也用中文。'
     : 'Write summaries, reasons, and title translations in English.';
 
-  return `你是一个技术内容摘要专家。请为以下文章完成三件事：
+  return `你是一个务实的技术内容编辑，读者是每天需要落地执行的工程师/产品经理。请为以下文章完成三件事：
 
 1. **中文标题** (titleZh): 将英文标题翻译成自然的中文。如果原标题已经是中文则保持不变。
-2. **摘要** (summary): 4-6 句话的结构化摘要，让读者不点进原文也能了解核心内容。包含：
-   - 文章讨论的核心问题或主题（1 句）
-   - 关键论点、技术方案或发现（2-3 句）
-   - 结论或作者的核心观点（1 句）
-3. **推荐理由** (reason): 1 句话说明"为什么值得读"，区别于摘要（摘要说"是什么"，推荐理由说"为什么"）。
+2. **摘要** (summary): 3-5 句话，聚焦「读完能马上做什么」，包含：
+   - 文章解决的具体问题或场景（1 句，说清「谁、在什么情况下、遇到什么问题」）
+   - 作者给出的核心方法、工具、命令、配置或步骤（1-2 句，保留具体名称和关键数字）
+   - 读者今天/本周可以立刻尝试的 1-2 个行动点（用「可以…」「建议…」「试试…」开头）
+3. **推荐理由** (reason): 1 句话说明「读完后你能立刻改变什么」，例如节省时间、避免踩坑、学到可复用的技巧。
 
 ${langInstruction}
 
-摘要要求：
-- 直接说重点，不要用"本文讨论了..."、"这篇文章介绍了..."这种开头
-- 包含具体的技术名词、数据、方案名称或观点
-- 保留关键数字和指标（如性能提升百分比、用户数、版本号等）
-- 如果文章涉及对比或选型，要点出比较对象和结论
-- 目标：读者花 30 秒读完摘要，就能决定是否值得花 10 分钟读原文
+写作要求：
+- 语气平实、具体，像同事分享经验，不要写行业宏大叙事或「颠覆性」「革命性」等空话
+- 直接说重点，禁止「本文讨论了…」「这篇文章介绍了…」开头
+- 优先写可操作的细节：工具名、版本号、命令、参数、对比结论、适用/不适用场景
+- 如果文章偏观点类，也要提炼出「你可以怎么调整自己的工作方式」
+- 目标：读者 30 秒内判断「今天要不要做这件事、怎么做第一步」
 
 ## 待摘要文章
 
@@ -785,17 +788,19 @@ async function generateHighlights(
 
   const langNote = lang === 'zh' ? '用中文回答。' : 'Write in English.';
 
-  const prompt = `根据以下今日精选技术文章列表，写一段 3-5 句话的"今日看点"总结。
+  const prompt = `根据以下今日精选技术文章列表，写一段「今日行动指南」（3-5 句话）。
 要求：
-- 提炼出今天技术圈的 2-3 个主要趋势或话题
-- 不要逐篇列举，要做宏观归纳
-- 风格简洁有力，像新闻导语
+- 不要写宏观行业趋势或空泛判断，聚焦读者今天/本周能落地的具体行动
+- 归纳出 2-3 个可执行方向，每个方向说清楚：做什么、用什么工具/方法、解决什么问题
+- 如果多篇文章指向同一实践（如某工具、某架构模式），合并成一条建议，避免重复
+- 语气像靠谱同事的快速同步：短句、具体、能直接照着做
+- 禁止「AI 正在重塑…」「行业迎来拐点…」这类宏大表述
 ${langNote}
 
 文章列表：
 ${articleList}
 
-直接返回纯文本总结，不要 JSON，不要 markdown 格式。`;
+直接返回纯文本，不要 JSON，不要 markdown 格式。`;
 
   try {
     const text = await aiClient.call(prompt);
@@ -944,7 +949,7 @@ function generateDigestReport(articles: ScoredArticle[], highlights: string, sta
 
   // ── Today's Highlights ──
   if (highlights) {
-    report += `## 📝 今日看点\n\n`;
+    report += `## 📝 今日行动指南\n\n`;
     report += `${highlights}\n\n`;
     report += `---\n\n`;
   }
@@ -1038,6 +1043,200 @@ function generateDigestReport(articles: ScoredArticle[], highlights: string, sta
 }
 
 // ============================================================================
+// Article Clippings (Full Markdown Export)
+// ============================================================================
+
+function formatDateCompact(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+function sanitizeFilename(title: string, maxLen = 120): string {
+  return title
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen) || 'untitled';
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+}
+
+function extractArticleHtml(html: string): string {
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '');
+
+  const selectors = [
+    /<article[^>]*>([\s\S]*?)<\/article>/i,
+    /<main[^>]*>([\s\S]*?)<\/main>/i,
+    /<div[^>]*class="[^"]*(?:post-content|entry-content|article-body|article-content|markdown-body|prose)[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*id="(?:content|main-content|post)"[^>]*>([\s\S]*?)<\/div>/i,
+  ];
+
+  for (const pattern of selectors) {
+    const match = cleaned.match(pattern);
+    if (match?.[1] && stripHtml(match[1]).length > 200) {
+      return match[1];
+    }
+  }
+
+  const bodyMatch = cleaned.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return bodyMatch?.[1] || cleaned;
+}
+
+function htmlToMarkdown(html: string): string {
+  let md = html;
+
+  md = md.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_, code) => {
+    const decoded = decodeHtmlEntities(code.replace(/<[^>]+>/g, ''));
+    return `\n\`\`\`\n${decoded.trim()}\n\`\`\`\n`;
+  });
+  md = md.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_, code) => {
+    const decoded = decodeHtmlEntities(code.replace(/<[^>]+>/g, ''));
+    return `\n\`\`\`\n${decoded.trim()}\n\`\`\`\n`;
+  });
+  md = md.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_, code) => `\`${decodeHtmlEntities(code.replace(/<[^>]+>/g, ''))}\``);
+
+  for (let level = 6; level >= 1; level--) {
+    const pattern = new RegExp(`<h${level}[^>]*>([\\s\\S]*?)<\\/h${level}>`, 'gi');
+    md = md.replace(pattern, (_, content) => `\n${'#'.repeat(level)} ${stripHtml(content)}\n`);
+  }
+
+  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, content) => {
+    const lines = stripHtml(content).split('\n').map(line => `> ${line.trim()}`).join('\n');
+    return `\n${lines}\n`;
+  });
+
+  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, content) => `\n- ${stripHtml(content).trim()}`);
+  md = md.replace(/<(?:ul|ol)[^>]*>/gi, '\n');
+  md = md.replace(/<\/(?:ul|ol)>/gi, '\n');
+
+  md = md.replace(/<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, text) => {
+    const label = stripHtml(text).trim() || href;
+    return `[${label}](${href})`;
+  });
+
+  md = md.replace(/<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi, '**$1**');
+  md = md.replace(/<(?:em|i)[^>]*>([\s\S]*?)<\/(?:em|i)>/gi, '*$1*');
+  md = md.replace(/<br\s*\/?>/gi, '\n');
+  md = md.replace(/<\/p>/gi, '\n\n');
+  md = md.replace(/<p[^>]*>/gi, '');
+  md = md.replace(/<[^>]+>/g, '');
+  md = decodeHtmlEntities(md);
+  md = md.replace(/\n{3,}/g, '\n\n').trim();
+
+  return md;
+}
+
+async function fetchArticleMarkdown(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ARTICLE_FETCH_TIMEOUT_MS);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'AI-Daily-Digest/1.0 (Article Reader)',
+        'Accept': 'text/html,application/xhtml+xml,text/plain,*/*',
+      },
+      redirect: 'follow',
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const body = await response.text();
+
+    if (contentType.includes('text/markdown') || url.endsWith('.md')) {
+      return body.trim();
+    }
+
+    const articleHtml = extractArticleHtml(body);
+    const markdown = htmlToMarkdown(articleHtml);
+    return markdown.length > 100 ? markdown : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildClippingMarkdown(article: ScoredArticle, content: string): string {
+  const dateStr = article.pubDate.toISOString().slice(0, 10);
+  const lines = [
+    `# ${article.title}`,
+    '',
+    `> 来源: [${article.sourceName}](${article.sourceUrl})`,
+    `> 原文: [${article.link}](${article.link})`,
+    `> 发布: ${dateStr}`,
+    '',
+    '---',
+    '',
+    content,
+  ];
+  return lines.join('\n');
+}
+
+async function saveArticleClippings(
+  articles: ScoredArticle[],
+  clippingsDir: string,
+  concurrency: number
+): Promise<number> {
+  await mkdir(clippingsDir, { recursive: true });
+
+  const datePrefix = formatDateCompact();
+  const usedNames = new Set<string>();
+  const tasks = articles.map((article) => {
+    const baseName = sanitizeFilename(article.title);
+    let fileName = `${datePrefix}-${baseName}.md`;
+
+    if (usedNames.has(fileName)) {
+      let suffix = 2;
+      while (usedNames.has(`${datePrefix}-${baseName}-${suffix}.md`)) {
+        suffix++;
+      }
+      fileName = `${datePrefix}-${baseName}-${suffix}.md`;
+    }
+    usedNames.add(fileName);
+
+    return { article, fileName };
+  });
+
+  let savedCount = 0;
+
+  await runWithConcurrency(tasks.length, concurrency, async (index) => {
+    const { article, fileName } = tasks[index]!;
+    const content = await fetchArticleMarkdown(article.link);
+    if (!content) {
+      console.warn(`[digest] ✗ Clipping failed: ${article.title}`);
+      return;
+    }
+
+    const filePath = `${clippingsDir}/${fileName}`;
+    await writeFile(filePath, buildClippingMarkdown(article, content), 'utf8');
+    savedCount++;
+    console.log(`[digest] ✓ Clipping saved: ${fileName}`);
+  });
+
+  return savedCount;
+}
+
+// ============================================================================
 // CLI
 // ============================================================================
 
@@ -1052,7 +1251,9 @@ Options:
   --top-n <n>     Number of top articles to include (default: 30)
   --lang <lang>   Summary language: zh or en (default: zh)
   --feed-concurrency <n> Max concurrent RSS fetches (default: 50)
-  --ai-concurrency <n> Max concurrent AI batch requests (default: 8)
+  --ai-concurrency <n> Max concurrent AI batch requests (default: 6)
+  --clippings-dir <path> Directory to save full article markdown (default: ~/my-kb/raw/clippings)
+  --clippings-concurrency <n> Max concurrent article fetches for clippings (default: 4)
   --output <path> Output file path (default: ./digest-YYYYMMDD.md)
   --help          Show this help
 
@@ -1081,6 +1282,8 @@ async function main(): Promise<void> {
   let topN = 30;
   let lang: 'zh' | 'en' = 'zh';
   let outputPath = '';
+  let clippingsDir = process.env.CLIPPINGS_DIR?.trim() || DEFAULT_CLIPPINGS_DIR;
+  let clippingsConcurrency = parsePositiveInt(process.env.CLIPPINGS_CONCURRENCY, DEFAULT_CLIPPINGS_CONCURRENCY);
   let feedConcurrency = parsePositiveInt(process.env.FEED_CONCURRENCY, DEFAULT_FEED_CONCURRENCY);
   let aiConcurrency = parsePositiveInt(process.env.AI_CONCURRENCY, DEFAULT_AI_CONCURRENCY);
   
@@ -1096,6 +1299,10 @@ async function main(): Promise<void> {
       feedConcurrency = parsePositiveInt(args[++i], feedConcurrency);
     } else if (arg === '--ai-concurrency' && args[i + 1]) {
       aiConcurrency = parsePositiveInt(args[++i], aiConcurrency);
+    } else if (arg === '--clippings-dir' && args[i + 1]) {
+      clippingsDir = args[++i]!;
+    } else if (arg === '--clippings-concurrency' && args[i + 1]) {
+      clippingsConcurrency = parsePositiveInt(args[++i], clippingsConcurrency);
     } else if (arg === '--output' && args[i + 1]) {
       outputPath = args[++i]!;
     }
@@ -1130,6 +1337,7 @@ async function main(): Promise<void> {
   console.log(`[digest] Language: ${lang}`);
   console.log(`[digest] Feed concurrency: ${feedConcurrency}`);
   console.log(`[digest] AI concurrency: ${aiConcurrency}`);
+  console.log(`[digest] Clippings dir: ${clippingsDir}`);
   console.log(`[digest] Output: ${outputPath}`);
   console.log(`[digest] AI provider: ${geminiApiKey ? 'Gemini (primary)' : 'OpenAI-compatible (primary)'}`);
   if (openaiApiKey) {
@@ -1141,7 +1349,7 @@ async function main(): Promise<void> {
   
   const rssFeeds = await loadRSSFeeds();
   console.log(`[digest] RSS sources loaded from rss.txt: ${rssFeeds.length}`);
-  console.log(`[digest] Step 1/5: Fetching ${rssFeeds.length} RSS feeds...`);
+  console.log(`[digest] Step 1/6: Fetching ${rssFeeds.length} RSS feeds...`);
   const allArticles = await fetchAllFeeds(rssFeeds, feedConcurrency);
   
   if (allArticles.length === 0) {
@@ -1149,7 +1357,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   
-  console.log(`[digest] Step 2/5: Filtering by time range (${hours} hours)...`);
+  console.log(`[digest] Step 2/6: Filtering by time range (${hours} hours)...`);
   const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
   const recentArticles = allArticles.filter(a => a.pubDate.getTime() > cutoffTime.getTime());
   
@@ -1161,7 +1369,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   
-  console.log(`[digest] Step 3/5: AI scoring ${recentArticles.length} articles...`);
+  console.log(`[digest] Step 3/6: AI scoring ${recentArticles.length} articles...`);
   const scores = await scoreArticlesWithAI(recentArticles, aiClient, aiConcurrency);
   
   const scoredArticles = recentArticles.map((article, index) => {
@@ -1178,7 +1386,7 @@ async function main(): Promise<void> {
   
   console.log(`[digest] Top ${topN} articles selected (score range: ${topArticles[topArticles.length - 1]?.totalScore || 0} - ${topArticles[0]?.totalScore || 0})`);
   
-  console.log(`[digest] Step 4/5: Generating AI summaries...`);
+  console.log(`[digest] Step 4/6: Generating AI summaries...`);
   const indexedTopArticles = topArticles.map((a, i) => ({ ...a, index: i }));
   const summaries = await summarizeArticles(indexedTopArticles, aiClient, lang, aiConcurrency);
   
@@ -1205,8 +1413,11 @@ async function main(): Promise<void> {
     };
   });
   
-  console.log(`[digest] Step 5/5: Generating today's highlights...`);
+  console.log(`[digest] Step 5/6: Generating today's highlights...`);
   const highlights = await generateHighlights(finalArticles, aiClient, lang);
+
+  console.log(`[digest] Step 6/6: Saving full article clippings (${finalArticles.length} articles)...`);
+  const clippingCount = await saveArticleClippings(finalArticles, clippingsDir, clippingsConcurrency);
   
   const successfulSources = new Set(allArticles.map(a => a.sourceName));
   
@@ -1225,6 +1436,7 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`[digest] ✅ Done!`);
   console.log(`[digest] 📁 Report: ${outputPath}`);
+  console.log(`[digest] 📎 Clippings: ${clippingCount}/${finalArticles.length} saved to ${clippingsDir}`);
   console.log(`[digest] 📊 Stats: ${successfulSources.size} sources → ${allArticles.length} articles → ${recentArticles.length} recent → ${finalArticles.length} selected`);
   
   if (finalArticles.length > 0) {
