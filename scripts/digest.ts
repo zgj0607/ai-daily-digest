@@ -1,6 +1,9 @@
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import process from 'node:process';
+import { Readability } from '@mozilla/readability';
+import { parseHTML } from 'linkedom';
+import TurndownService from 'turndown';
 
 // ============================================================================
 // Constants
@@ -14,10 +17,11 @@ const ARTICLE_FETCH_TIMEOUT_MS = 20_000;
 const DEFAULT_FEED_CONCURRENCY = 50;
 const GEMINI_BATCH_SIZE = 15;
 const DEFAULT_AI_CONCURRENCY = 6;
-const DEFAULT_CLIPPINGS_CONCURRENCY = 4;
+const DEFAULT_CLIPPINGS_CONCURRENCY = 2;
 const DEFAULT_CLIPPINGS_DIR = '/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings';
 
 const RSS_FEEDS_FILE = new URL('../rss.txt', import.meta.url);
+const CLIPPING_TRANSLATE_BATCH_SIZE = 6;
 
 // ============================================================================
 // Types
@@ -1046,6 +1050,8 @@ function generateDigestReport(articles: ScoredArticle[], highlights: string, sta
 // Article Clippings (Full Markdown Export)
 // ============================================================================
 
+type MarkdownBlock = { type: 'code' | 'text'; content: string };
+
 function formatDateCompact(date: Date = new Date()): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -1061,84 +1067,181 @@ function sanitizeFilename(title: string, maxLen = 120): string {
     .slice(0, maxLen) || 'untitled';
 }
 
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
-}
+function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  const lines = markdown.split('\n');
+  let textBuffer: string[] = [];
+  let index = 0;
 
-function extractArticleHtml(html: string): string {
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, '');
-
-  const selectors = [
-    /<article[^>]*>([\s\S]*?)<\/article>/i,
-    /<main[^>]*>([\s\S]*?)<\/main>/i,
-    /<div[^>]*class="[^"]*(?:post-content|entry-content|article-body|article-content|markdown-body|prose)[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*id="(?:content|main-content|post)"[^>]*>([\s\S]*?)<\/div>/i,
-  ];
-
-  for (const pattern of selectors) {
-    const match = cleaned.match(pattern);
-    if (match?.[1] && stripHtml(match[1]).length > 200) {
-      return match[1];
+  const flushText = () => {
+    const content = textBuffer.join('\n').trimEnd();
+    textBuffer = [];
+    if (content.trim()) {
+      blocks.push({ type: 'text', content });
     }
+  };
+
+  while (index < lines.length) {
+    const line = lines[index]!;
+    if (line.trim().startsWith('```')) {
+      flushText();
+      const codeLines = [line];
+      index++;
+      while (index < lines.length) {
+        codeLines.push(lines[index]!);
+        if (lines[index]!.trim().startsWith('```') && codeLines.length > 1) {
+          index++;
+          break;
+        }
+        index++;
+      }
+      blocks.push({ type: 'code', content: codeLines.join('\n') });
+      continue;
+    }
+
+    if (line.trim() === '') {
+      flushText();
+      index++;
+      continue;
+    }
+
+    textBuffer.push(line);
+    index++;
   }
 
-  const bodyMatch = cleaned.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  return bodyMatch?.[1] || cleaned;
+  flushText();
+  return blocks;
 }
 
-function htmlToMarkdown(html: string): string {
-  let md = html;
+function countChineseChars(text: string): number {
+  return (text.match(/[\u4e00-\u9fff]/g) || []).length;
+}
 
-  md = md.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_, code) => {
-    const decoded = decodeHtmlEntities(code.replace(/<[^>]+>/g, ''));
-    return `\n\`\`\`\n${decoded.trim()}\n\`\`\`\n`;
-  });
-  md = md.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_, code) => {
-    const decoded = decodeHtmlEntities(code.replace(/<[^>]+>/g, ''));
-    return `\n\`\`\`\n${decoded.trim()}\n\`\`\`\n`;
-  });
-  md = md.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_, code) => `\`${decodeHtmlEntities(code.replace(/<[^>]+>/g, ''))}\``);
+function isMostlyChinese(text: string): boolean {
+  const meaningful = text.replace(/[#>*\-\[\]()!`~\d\s]/g, '');
+  if (!meaningful) return false;
+  return countChineseChars(meaningful) / meaningful.length > 0.3;
+}
 
-  for (let level = 6; level >= 1; level--) {
-    const pattern = new RegExp(`<h${level}[^>]*>([\\s\\S]*?)<\\/h${level}>`, 'gi');
-    md = md.replace(pattern, (_, content) => `\n${'#'.repeat(level)} ${stripHtml(content)}\n`);
+function shouldTranslateBlock(content: string): boolean {
+  const plain = content.replace(/^#{1,6}\s+/, '').trim();
+  if (!plain) return false;
+  if (isMostlyChinese(plain)) return false;
+  if (plain.length < 12) return false;
+  if (/^!\[.*\]\(.*\)$/.test(plain)) return false;
+  if (/^https?:\/\//.test(plain)) return false;
+  return true;
+}
+
+async function translateTextBlocks(blocks: string[], aiClient: AIClient): Promise<string[]> {
+  if (blocks.length === 0) return [];
+
+  const prompt = `你是沉浸式翻译助手。请将以下 Markdown 段落逐条翻译成自然流畅的中文。
+
+要求：
+- 保留原文中的链接、代码片段、专有名词（可附中文说明）
+- 标题段落（以 # 开头）翻译后仍保留相同数量的 # 前缀
+- 列表项翻译后仍保留 - 或数字序号前缀
+- 语气忠实原文，便于阅读
+- 只返回 JSON，不要 markdown 代码块
+
+输入共 ${blocks.length} 条，按 index 返回翻译：
+
+${blocks.map((block, index) => `--- index ${index} ---\n${block}`).join('\n\n')}
+
+返回格式：
+{
+  "translations": [
+    { "index": 0, "text": "中文翻译" }
+  ]
+}`;
+
+  try {
+    const responseText = await aiClient.call(prompt);
+    const parsed = parseJsonResponse<{ translations: Array<{ index: number; text: string }> }>(responseText);
+    const results = new Array<string>(blocks.length).fill('');
+    if (parsed.translations && Array.isArray(parsed.translations)) {
+      for (const item of parsed.translations) {
+        if (item.index >= 0 && item.index < blocks.length && item.text) {
+          results[item.index] = item.text.trim();
+        }
+      }
+    }
+    return results;
+  } catch (error) {
+    console.warn(`[digest] Clipping translation batch failed: ${error instanceof Error ? error.message : String(error)}`);
+    return blocks.map(() => '');
+  }
+}
+
+async function addBilingualTranslation(markdown: string, aiClient: AIClient): Promise<string> {
+  const blocks = parseMarkdownBlocks(markdown);
+  const textBlocks = blocks.filter(block => block.type === 'text');
+  const allText = textBlocks.map(block => block.content).join('\n');
+
+  if (!allText.trim() || isMostlyChinese(allText)) {
+    return markdown;
   }
 
-  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, content) => {
-    const lines = stripHtml(content).split('\n').map(line => `> ${line.trim()}`).join('\n');
-    return `\n${lines}\n`;
+  const translatable: Array<{ blockIndex: number; content: string }> = [];
+  blocks.forEach((block, blockIndex) => {
+    if (block.type === 'text' && shouldTranslateBlock(block.content)) {
+      translatable.push({ blockIndex, content: block.content });
+    }
   });
 
-  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, content) => `\n- ${stripHtml(content).trim()}`);
-  md = md.replace(/<(?:ul|ol)[^>]*>/gi, '\n');
-  md = md.replace(/<\/(?:ul|ol)>/gi, '\n');
+  if (translatable.length === 0) {
+    return markdown;
+  }
 
-  md = md.replace(/<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, text) => {
-    const label = stripHtml(text).trim() || href;
-    return `[${label}](${href})`;
+  const translations = new Map<number, string>();
+  for (let start = 0; start < translatable.length; start += CLIPPING_TRANSLATE_BATCH_SIZE) {
+    const batch = translatable.slice(start, start + CLIPPING_TRANSLATE_BATCH_SIZE);
+    const translated = await translateTextBlocks(batch.map(item => item.content), aiClient);
+    batch.forEach((item, index) => {
+      const text = translated[index]?.trim();
+      if (text) {
+        translations.set(item.blockIndex, text);
+      }
+    });
+  }
+
+  const parts: string[] = [];
+  blocks.forEach((block, blockIndex) => {
+    parts.push(block.content);
+    const translation = translations.get(blockIndex);
+    if (translation) {
+      parts.push('');
+      parts.push(translation);
+    }
   });
 
-  md = md.replace(/<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi, '**$1**');
-  md = md.replace(/<(?:em|i)[^>]*>([\s\S]*?)<\/(?:em|i)>/gi, '*$1*');
-  md = md.replace(/<br\s*\/?>/gi, '\n');
-  md = md.replace(/<\/p>/gi, '\n\n');
-  md = md.replace(/<p[^>]*>/gi, '');
-  md = md.replace(/<[^>]+>/g, '');
-  md = decodeHtmlEntities(md);
-  md = md.replace(/\n{3,}/g, '\n\n').trim();
+  return parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
-  return md;
+function createTurndownService(): TurndownService {
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+  });
+
+  turndown.remove(['script', 'style', 'nav', 'footer', 'aside', 'iframe', 'form', 'noscript']);
+  return turndown;
+}
+
+function extractArticleMarkdownFromHtml(html: string): string | null {
+  const { document } = parseHTML(html);
+  const reader = new Readability(document, { charThreshold: 100 });
+  const article = reader.parse();
+
+  if (!article?.content) {
+    return null;
+  }
+
+  const turndown = createTurndownService();
+  const markdown = turndown.turndown(article.content).replace(/\n{3,}/g, '\n\n').trim();
+  return markdown.length > 100 ? markdown : null;
 }
 
 async function fetchArticleMarkdown(url: string): Promise<string | null> {
@@ -1150,7 +1253,7 @@ async function fetchArticleMarkdown(url: string): Promise<string | null> {
       signal: controller.signal,
       headers: {
         'User-Agent': 'AI-Daily-Digest/1.0 (Article Reader)',
-        'Accept': 'text/html,application/xhtml+xml,text/plain,*/*',
+        'Accept': 'text/html,application/xhtml+xml,text/markdown,text/plain,*/*',
       },
       redirect: 'follow',
     });
@@ -1165,12 +1268,11 @@ async function fetchArticleMarkdown(url: string): Promise<string | null> {
     const body = await response.text();
 
     if (contentType.includes('text/markdown') || url.endsWith('.md')) {
-      return body.trim();
+      const markdown = body.trim();
+      return markdown.length > 100 ? markdown : null;
     }
 
-    const articleHtml = extractArticleHtml(body);
-    const markdown = htmlToMarkdown(articleHtml);
-    return markdown.length > 100 ? markdown : null;
+    return extractArticleMarkdownFromHtml(body);
   } catch {
     return null;
   }
@@ -1179,10 +1281,10 @@ async function fetchArticleMarkdown(url: string): Promise<string | null> {
 function buildClippingMarkdown(article: ScoredArticle, content: string): string {
   const dateStr = article.pubDate.toISOString().slice(0, 10);
   const lines = [
-    `# ${article.title}`,
+    `# ${article.titleZh || article.title}`,
     '',
     `> 来源: [${article.sourceName}](${article.sourceUrl})`,
-    `> 原文: [${article.link}](${article.link})`,
+    `> 原文: [${article.title}](${article.link})`,
     `> 发布: ${dateStr}`,
     '',
     '---',
@@ -1195,7 +1297,8 @@ function buildClippingMarkdown(article: ScoredArticle, content: string): string 
 async function saveArticleClippings(
   articles: ScoredArticle[],
   clippingsDir: string,
-  concurrency: number
+  concurrency: number,
+  aiClient: AIClient
 ): Promise<number> {
   await mkdir(clippingsDir, { recursive: true });
 
@@ -1221,12 +1324,13 @@ async function saveArticleClippings(
 
   await runWithConcurrency(tasks.length, concurrency, async (index) => {
     const { article, fileName } = tasks[index]!;
-    const content = await fetchArticleMarkdown(article.link);
-    if (!content) {
+    const rawMarkdown = await fetchArticleMarkdown(article.link);
+    if (!rawMarkdown) {
       console.warn(`[digest] ✗ Clipping failed: ${article.title}`);
       return;
     }
 
+    const content = await addBilingualTranslation(rawMarkdown, aiClient);
     const filePath = `${clippingsDir}/${fileName}`;
     await writeFile(filePath, buildClippingMarkdown(article, content), 'utf8');
     savedCount++;
@@ -1417,7 +1521,7 @@ async function main(): Promise<void> {
   const highlights = await generateHighlights(finalArticles, aiClient, lang);
 
   console.log(`[digest] Step 6/6: Saving full article clippings (${finalArticles.length} articles)...`);
-  const clippingCount = await saveArticleClippings(finalArticles, clippingsDir, clippingsConcurrency);
+  const clippingCount = await saveArticleClippings(finalArticles, clippingsDir, clippingsConcurrency, aiClient);
   
   const successfulSources = new Set(allArticles.map(a => a.sourceName));
   
