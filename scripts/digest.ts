@@ -1,9 +1,19 @@
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import process from 'node:process';
-import { Readability } from '@mozilla/readability';
-import { parseHTML } from 'linkedom';
-import TurndownService from 'turndown';
+import { saveArticleClippings } from './clippings.ts';
+import { selectDiverseTopArticles, normalizeTopicSlug } from './diversity.ts';
+import { generateDigestReport } from './report.ts';
+import type {
+  AIClient,
+  Article,
+  ArticleScoreBreakdown,
+  CategoryId,
+  FeedSource,
+  RankedArticle,
+  ScoredArticle,
+} from './types.ts';
+import { parseJsonResponse, parsePositiveInt, runWithConcurrency } from './utils.ts';
 
 // ============================================================================
 // Constants
@@ -13,7 +23,6 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1';
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
 const FEED_FETCH_TIMEOUT_MS = 15_000;
-const ARTICLE_FETCH_TIMEOUT_MS = 20_000;
 const DEFAULT_FEED_CONCURRENCY = 50;
 const GEMINI_BATCH_SIZE = 15;
 const DEFAULT_AI_CONCURRENCY = 6;
@@ -21,50 +30,6 @@ const DEFAULT_CLIPPINGS_CONCURRENCY = 2;
 const DEFAULT_CLIPPINGS_DIR = '/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings';
 
 const RSS_FEEDS_FILE = new URL('../rss.txt', import.meta.url);
-const CLIPPING_TRANSLATE_BATCH_SIZE = 6;
-
-// ============================================================================
-// Types
-// ============================================================================
-
-type CategoryId = 'ai-ml' | 'security' | 'engineering' | 'tools' | 'opinion' | 'other';
-interface FeedSource {
-  name: string;
-  xmlUrl: string;
-  htmlUrl: string;
-}
-
-const CATEGORY_META: Record<CategoryId, { emoji: string; label: string }> = {
-  'ai-ml':       { emoji: '🤖', label: 'AI / ML' },
-  'security':    { emoji: '🔒', label: '安全' },
-  'engineering': { emoji: '⚙️', label: '工程' },
-  'tools':       { emoji: '🛠', label: '工具 / 开源' },
-  'opinion':     { emoji: '💡', label: '观点 / 杂谈' },
-  'other':       { emoji: '📝', label: '其他' },
-};
-
-interface Article {
-  title: string;
-  link: string;
-  pubDate: Date;
-  description: string;
-  sourceName: string;
-  sourceUrl: string;
-}
-
-interface ScoredArticle extends Article {
-  score: number;
-  scoreBreakdown: {
-    relevance: number;
-    quality: number;
-    timeliness: number;
-  };
-  category: CategoryId;
-  keywords: string[];
-  titleZh: string;
-  summary: string;
-  reason: string;
-}
 
 interface GeminiScoringResult {
   results: Array<{
@@ -74,6 +39,7 @@ interface GeminiScoringResult {
     timeliness: number;
     category: string;
     keywords: string[];
+    topic?: string;
   }>;
 }
 
@@ -84,10 +50,6 @@ interface GeminiSummaryResult {
     summary: string;
     reason: string;
   }>;
-}
-
-interface AIClient {
-  call(prompt: string): Promise<string>;
 }
 
 function normalizeFeedUrl(url: string): string {
@@ -339,37 +301,6 @@ async function fetchFeed(feed: FeedSource): Promise<Article[]> {
   }
 }
 
-function parsePositiveInt(value: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(value || '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-async function runWithConcurrency(
-  total: number,
-  concurrency: number,
-  workerFn: (index: number) => Promise<void>
-): Promise<void> {
-  if (total <= 0) {
-    return;
-  }
-
-  let nextIndex = 0;
-  const workerCount = Math.min(concurrency, total);
-
-  async function worker(): Promise<void> {
-    while (true) {
-      const currentIndex = nextIndex++;
-      if (currentIndex >= total) {
-        return;
-      }
-
-      await workerFn(currentIndex);
-    }
-  }
-
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-}
-
 async function fetchAllFeeds(feeds: FeedSource[], concurrency: number): Promise<Article[]> {
   const allArticles: Article[] = [];
   let successCount = 0;
@@ -542,15 +473,6 @@ function createAIClient(config: {
   };
 }
 
-function parseJsonResponse<T>(text: string): T {
-  let jsonText = text.trim();
-  // Strip markdown code blocks if present
-  if (jsonText.startsWith('```')) {
-    jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-  }
-  return JSON.parse(jsonText) as T;
-}
-
 // ============================================================================
 // AI Scoring
 // ============================================================================
@@ -595,6 +517,12 @@ function buildScoringPrompt(articles: Array<{ index: number; title: string; desc
 ## 关键词提取
 提取 2-4 个最能代表文章主题的关键词（用英文，简短，如 "Rust", "LLM", "database", "performance"）
 
+## 主题标识 (topic)
+用 2-4 个英文单词的 slug 标识文章所讨论的核心事件或话题（如 "openai-gpt5-release", "rust-async-io", "kubernetes-1-33"）。
+- 多篇报道**同一新闻事件/产品发布/漏洞**时，必须使用**相同**的 topic
+- 不要每篇文章都写不同的 topic，同一热点应归并
+- 常青教程、与具体事件无关的内容用描述性 slug（如 "postgres-indexing-guide"）
+
 ## 待评分文章
 
 ${articlesList}
@@ -608,7 +536,8 @@ ${articlesList}
       "quality": 7,
       "timeliness": 9,
       "category": "engineering",
-      "keywords": ["Rust", "compiler", "performance"]
+      "keywords": ["Rust", "compiler", "performance"],
+      "topic": "rust-compiler-optimization"
     }
   ]
 }`;
@@ -618,8 +547,8 @@ async function scoreArticlesWithAI(
   articles: Article[],
   aiClient: AIClient,
   aiConcurrency: number
-): Promise<Map<number, { relevance: number; quality: number; timeliness: number; category: CategoryId; keywords: string[] }>> {
-  const allScores = new Map<number, { relevance: number; quality: number; timeliness: number; category: CategoryId; keywords: string[] }>();
+): Promise<Map<number, ArticleScoreBreakdown>> {
+  const allScores = new Map<number, ArticleScoreBreakdown>();
   
   const indexed = articles.map((article, index) => ({
     index,
@@ -655,13 +584,16 @@ async function scoreArticlesWithAI(
             timeliness: clamp(result.timeliness),
             category: cat,
             keywords: Array.isArray(result.keywords) ? result.keywords.slice(0, 4) : [],
+            topic: normalizeTopicSlug(result.topic),
           });
         }
       }
     } catch (error) {
       console.warn(`[digest] Scoring batch failed: ${error instanceof Error ? error.message : String(error)}`);
       for (const item of batch) {
-        allScores.set(item.index, { relevance: 5, quality: 5, timeliness: 5, category: 'other', keywords: [] });
+        allScores.set(item.index, {
+          relevance: 5, quality: 5, timeliness: 5, category: 'other', keywords: [], topic: 'misc',
+        });
       }
     } finally {
       completedBatches++;
@@ -816,567 +748,6 @@ ${articleList}
 }
 
 // ============================================================================
-// Visualization Helpers
-// ============================================================================
-
-function humanizeTime(pubDate: Date): string {
-  const diffMs = Date.now() - pubDate.getTime();
-  const diffMins = Math.floor(diffMs / 60_000);
-  const diffHours = Math.floor(diffMs / 3_600_000);
-  const diffDays = Math.floor(diffMs / 86_400_000);
-
-  if (diffMins < 60) return `${diffMins} 分钟前`;
-  if (diffHours < 24) return `${diffHours} 小时前`;
-  if (diffDays < 7) return `${diffDays} 天前`;
-  return pubDate.toISOString().slice(0, 10);
-}
-
-function generateKeywordBarChart(articles: ScoredArticle[]): string {
-  const kwCount = new Map<string, number>();
-  for (const a of articles) {
-    for (const kw of a.keywords) {
-      const normalized = kw.toLowerCase();
-      kwCount.set(normalized, (kwCount.get(normalized) || 0) + 1);
-    }
-  }
-
-  const sorted = Array.from(kwCount.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12);
-
-  if (sorted.length === 0) return '';
-
-  const labels = sorted.map(([k]) => `"${k}"`).join(', ');
-  const values = sorted.map(([, v]) => v).join(', ');
-  const maxVal = sorted[0][1];
-
-  let chart = '```mermaid\n';
-  chart += `xychart-beta horizontal\n`;
-  chart += `    title "高频关键词"\n`;
-  chart += `    x-axis [${labels}]\n`;
-  chart += `    y-axis "出现次数" 0 --> ${maxVal + 2}\n`;
-  chart += `    bar [${values}]\n`;
-  chart += '```\n';
-
-  return chart;
-}
-
-function generateCategoryPieChart(articles: ScoredArticle[]): string {
-  const catCount = new Map<CategoryId, number>();
-  for (const a of articles) {
-    catCount.set(a.category, (catCount.get(a.category) || 0) + 1);
-  }
-
-  if (catCount.size === 0) return '';
-
-  const sorted = Array.from(catCount.entries()).sort((a, b) => b[1] - a[1]);
-
-  let chart = '```mermaid\n';
-  chart += `pie showData\n`;
-  chart += `    title "文章分类分布"\n`;
-  for (const [cat, count] of sorted) {
-    const meta = CATEGORY_META[cat];
-    chart += `    "${meta.emoji} ${meta.label}" : ${count}\n`;
-  }
-  chart += '```\n';
-
-  return chart;
-}
-
-function generateAsciiBarChart(articles: ScoredArticle[]): string {
-  const kwCount = new Map<string, number>();
-  for (const a of articles) {
-    for (const kw of a.keywords) {
-      const normalized = kw.toLowerCase();
-      kwCount.set(normalized, (kwCount.get(normalized) || 0) + 1);
-    }
-  }
-
-  const sorted = Array.from(kwCount.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-
-  if (sorted.length === 0) return '';
-
-  const maxVal = sorted[0][1];
-  const maxBarWidth = 20;
-  const maxLabelLen = Math.max(...sorted.map(([k]) => k.length));
-
-  let chart = '```\n';
-  for (const [label, value] of sorted) {
-    const barLen = Math.max(1, Math.round((value / maxVal) * maxBarWidth));
-    const bar = '█'.repeat(barLen) + '░'.repeat(maxBarWidth - barLen);
-    chart += `${label.padEnd(maxLabelLen)} │ ${bar} ${value}\n`;
-  }
-  chart += '```\n';
-
-  return chart;
-}
-
-function generateTagCloud(articles: ScoredArticle[]): string {
-  const kwCount = new Map<string, number>();
-  for (const a of articles) {
-    for (const kw of a.keywords) {
-      const normalized = kw.toLowerCase();
-      kwCount.set(normalized, (kwCount.get(normalized) || 0) + 1);
-    }
-  }
-
-  const sorted = Array.from(kwCount.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 20);
-
-  if (sorted.length === 0) return '';
-
-  return sorted
-    .map(([word, count], i) => i < 3 ? `**${word}**(${count})` : `${word}(${count})`)
-    .join(' · ');
-}
-
-// ============================================================================
-// Report Generation
-// ============================================================================
-
-function generateDigestReport(articles: ScoredArticle[], highlights: string, stats: {
-  totalFeeds: number;
-  successFeeds: number;
-  totalArticles: number;
-  filteredArticles: number;
-  hours: number;
-  lang: string;
-}): string {
-  const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
-  
-  let report = `# 📰 AI 博客每日精选 — ${dateStr}\n\n`;
-  report += `> 来自 Karpathy 推荐和阮一峰网络日志出现的 ${stats.totalFeeds} 个顶级技术博客，AI 精选 Top ${articles.length}\n\n`;
-
-  // ── Today's Highlights ──
-  if (highlights) {
-    report += `## 📝 今日行动指南\n\n`;
-    report += `${highlights}\n\n`;
-    report += `---\n\n`;
-  }
-
-  // ── Top 10 Deep Showcase ──
-  if (articles.length > 0) {
-    report += `## 🏆 今日必读\n\n`;
-    for (let i = 0; i < Math.min(10, articles.length); i++) {
-      const a = articles[i];
-      const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
-      const catMeta = CATEGORY_META[a.category];
-      
-      report += `${medal} **${a.titleZh || a.title}**\n\n`;
-      report += `[${a.title}](${a.link}) — ${a.sourceName} · ${humanizeTime(a.pubDate)} · ${catMeta.emoji} ${catMeta.label}\n\n`;
-      report += `> ${a.summary}\n\n`;
-      if (a.reason) {
-        report += `💡 **为什么值得读**: ${a.reason}\n\n`;
-      }
-      if (a.keywords.length > 0) {
-        report += `🏷️ ${a.keywords.join(', ')}\n\n`;
-      }
-    }
-    report += `---\n\n`;
-  }
-
-  // ── Visual Statistics ──
-  report += `## 📊 数据概览\n\n`;
-
-  report += `| 扫描源 | 抓取文章 | 时间范围 | 精选 |\n`;
-  report += `|:---:|:---:|:---:|:---:|\n`;
-  report += `| ${stats.successFeeds}/${stats.totalFeeds} | ${stats.totalArticles} 篇 → ${stats.filteredArticles} 篇 | ${stats.hours}h | **${articles.length} 篇** |\n\n`;
-
-  const pieChart = generateCategoryPieChart(articles);
-  if (pieChart) {
-    report += `### 分类分布\n\n${pieChart}\n`;
-  }
-
-  const barChart = generateKeywordBarChart(articles);
-  if (barChart) {
-    report += `### 高频关键词\n\n${barChart}\n`;
-  }
-
-  const asciiChart = generateAsciiBarChart(articles);
-  if (asciiChart) {
-    report += `<details>\n<summary>📈 纯文本关键词图（终端友好）</summary>\n\n${asciiChart}\n</details>\n\n`;
-  }
-
-  const tagCloud = generateTagCloud(articles);
-  if (tagCloud) {
-    report += `### 🏷️ 话题标签\n\n${tagCloud}\n\n`;
-  }
-
-  report += `---\n\n`;
-
-  // ── Category-Grouped Articles ──
-  const categoryGroups = new Map<CategoryId, ScoredArticle[]>();
-  for (const a of articles) {
-    const list = categoryGroups.get(a.category) || [];
-    list.push(a);
-    categoryGroups.set(a.category, list);
-  }
-
-  const sortedCategories = Array.from(categoryGroups.entries())
-    .sort((a, b) => b[1].length - a[1].length);
-
-  let globalIndex = 0;
-  for (const [catId, catArticles] of sortedCategories) {
-    const catMeta = CATEGORY_META[catId];
-    report += `## ${catMeta.emoji} ${catMeta.label}\n\n`;
-
-    for (const a of catArticles) {
-      globalIndex++;
-      const scoreTotal = a.scoreBreakdown.relevance + a.scoreBreakdown.quality + a.scoreBreakdown.timeliness;
-
-      report += `### ${globalIndex}. ${a.titleZh || a.title}\n\n`;
-      report += `[${a.title}](${a.link}) — **${a.sourceName}** · ${humanizeTime(a.pubDate)} · ⭐ ${scoreTotal}/30\n\n`;
-      report += `> ${a.summary}\n\n`;
-      if (a.keywords.length > 0) {
-        report += `🏷️ ${a.keywords.join(', ')}\n\n`;
-      }
-      report += `---\n\n`;
-    }
-  }
-
-  // ── Footer ──
-  report += `*生成于 ${dateStr} ${now.toISOString().split('T')[1]?.slice(0, 5) || ''} | 扫描 ${stats.successFeeds} 源 → 获取 ${stats.totalArticles} 篇 → 精选 ${articles.length} 篇*\n`;
-  report += `*基于 [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/) RSS 源列表，由 [Andrej Karpathy](https://x.com/karpathy) 推荐*\n`;
-  report += `*由「懂点儿AI」制作，欢迎关注同名微信公众号获取更多 AI 实用技巧 💡*\n`;
-
-  return report;
-}
-
-// ============================================================================
-// Article Clippings (Full Markdown Export)
-// ============================================================================
-
-type MarkdownBlock = { type: 'code' | 'text'; content: string };
-
-function formatDateCompact(date: Date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
-}
-
-function sanitizeFilename(title: string, maxLen = 120): string {
-  return title
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLen) || 'untitled';
-}
-
-function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
-  const blocks: MarkdownBlock[] = [];
-  const lines = markdown.split('\n');
-  let textBuffer: string[] = [];
-  let index = 0;
-
-  const flushText = () => {
-    const content = textBuffer.join('\n').trimEnd();
-    textBuffer = [];
-    if (content.trim()) {
-      blocks.push({ type: 'text', content });
-    }
-  };
-
-  while (index < lines.length) {
-    const line = lines[index]!;
-    if (line.trim().startsWith('```')) {
-      flushText();
-      const codeLines = [line];
-      index++;
-      while (index < lines.length) {
-        codeLines.push(lines[index]!);
-        if (lines[index]!.trim().startsWith('```') && codeLines.length > 1) {
-          index++;
-          break;
-        }
-        index++;
-      }
-      blocks.push({ type: 'code', content: codeLines.join('\n') });
-      continue;
-    }
-
-    if (line.trim() === '') {
-      flushText();
-      index++;
-      continue;
-    }
-
-    textBuffer.push(line);
-    index++;
-  }
-
-  flushText();
-  return blocks;
-}
-
-function stripForLanguageDetection(text: string): string {
-  return text
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/`[^`]+`/g, '')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^[-*+]\s+/gm, '')
-    .replace(/^\d+\.\s+/gm, '')
-    .replace(/[#>*_\[\]()!~`|]/g, '')
-    .replace(/\s+/g, '')
-    .trim();
-}
-
-function countChineseChars(text: string): number {
-  return (text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g) || []).length;
-}
-
-function countTranslatableLetters(text: string): number {
-  return (text.match(/[a-zA-Z\u0400-\u04ff\u00C0-\u024F\u1E00-\u1EFF\u0370-\u03ff\u0590-\u05ff\u0600-\u06ff\u0900-\u097f\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
-}
-
-function isChineseContent(text: string): boolean {
-  const plain = stripForLanguageDetection(text);
-  if (!plain) return false;
-
-  const chineseCount = countChineseChars(plain);
-  if (chineseCount === 0) return false;
-
-  const letterCount = chineseCount + countTranslatableLetters(plain);
-  if (letterCount === 0) return false;
-
-  // 段落里中文字符占比高，视为中文内容，不再翻译
-  return chineseCount / letterCount >= 0.2;
-}
-
-function isDocumentMostlyChinese(text: string): boolean {
-  const plain = stripForLanguageDetection(text);
-  if (!plain) return false;
-
-  const chineseCount = countChineseChars(plain);
-  const letterCount = chineseCount + countTranslatableLetters(plain);
-  if (letterCount === 0) return chineseCount > 0;
-
-  return chineseCount / letterCount >= 0.35;
-}
-
-function shouldTranslateBlock(content: string): boolean {
-  const plain = content.replace(/^#{1,6}\s+/, '').trim();
-  if (!plain || plain.length < 8) return false;
-  if (isChineseContent(content)) return false;
-  if (/^!\[.*\]\(.*\)$/.test(plain)) return false;
-  if (/^https?:\/\//.test(plain)) return false;
-
-  // 仅翻译含非中文书写系统的内容（英文、俄语、西语等）
-  return countTranslatableLetters(plain) >= 4;
-}
-
-async function translateTextBlocks(blocks: string[], aiClient: AIClient): Promise<string[]> {
-  if (blocks.length === 0) return [];
-
-  const prompt = `你是沉浸式翻译助手。以下 Markdown 段落来自英文、俄语、西班牙语等非中文原文，请逐条翻译为自然流畅的中文。
-
-要求：
-- 输入已是中文的段落不要翻译，translations 中对应 index 返回空字符串 ""
-- 保留原文中的链接、代码片段、专有名词（可附中文说明）
-- 标题段落（以 # 开头）翻译后仍保留相同数量的 # 前缀
-- 列表项翻译后仍保留 - 或数字序号前缀
-- 只返回 JSON，不要 markdown 代码块
-
-输入共 ${blocks.length} 条，按 index 返回翻译：
-
-${blocks.map((block, index) => `--- index ${index} ---\n${block}`).join('\n\n')}
-
-返回格式：
-{
-  "translations": [
-    { "index": 0, "text": "中文翻译，若原文已是中文则为空字符串" }
-  ]
-}`;
-
-  try {
-    const responseText = await aiClient.call(prompt);
-    const parsed = parseJsonResponse<{ translations: Array<{ index: number; text: string }> }>(responseText);
-    const results = new Array<string>(blocks.length).fill('');
-    if (parsed.translations && Array.isArray(parsed.translations)) {
-      for (const item of parsed.translations) {
-        if (item.index >= 0 && item.index < blocks.length && item.text) {
-          results[item.index] = item.text.trim();
-        }
-      }
-    }
-    return results;
-  } catch (error) {
-    console.warn(`[digest] Clipping translation batch failed: ${error instanceof Error ? error.message : String(error)}`);
-    return blocks.map(() => '');
-  }
-}
-
-async function addBilingualTranslation(markdown: string, aiClient: AIClient): Promise<string> {
-  const blocks = parseMarkdownBlocks(markdown);
-  const textBlocks = blocks.filter(block => block.type === 'text');
-  const allText = textBlocks.map(block => block.content).join('\n');
-
-  if (!allText.trim() || isDocumentMostlyChinese(allText)) {
-    return markdown;
-  }
-
-  const translatable: Array<{ blockIndex: number; content: string }> = [];
-  blocks.forEach((block, blockIndex) => {
-    if (block.type === 'text' && shouldTranslateBlock(block.content)) {
-      translatable.push({ blockIndex, content: block.content });
-    }
-  });
-
-  if (translatable.length === 0) {
-    return markdown;
-  }
-
-  const translations = new Map<number, string>();
-  for (let start = 0; start < translatable.length; start += CLIPPING_TRANSLATE_BATCH_SIZE) {
-    const batch = translatable.slice(start, start + CLIPPING_TRANSLATE_BATCH_SIZE);
-    const translated = await translateTextBlocks(batch.map(item => item.content), aiClient);
-    batch.forEach((item, index) => {
-      const text = translated[index]?.trim();
-      if (!text || text === item.content.trim()) return;
-      translations.set(item.blockIndex, text);
-    });
-  }
-
-  const parts: string[] = [];
-  blocks.forEach((block, blockIndex) => {
-    parts.push(block.content);
-    const translation = translations.get(blockIndex);
-    if (translation) {
-      parts.push('');
-      parts.push(translation);
-    }
-  });
-
-  return parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
-}
-
-function createTurndownService(): TurndownService {
-  const turndown = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    bulletListMarker: '-',
-  });
-
-  turndown.remove(['script', 'style', 'nav', 'footer', 'aside', 'iframe', 'form', 'noscript']);
-  return turndown;
-}
-
-function extractArticleMarkdownFromHtml(html: string): string | null {
-  const { document } = parseHTML(html);
-  const reader = new Readability(document, { charThreshold: 100 });
-  const article = reader.parse();
-
-  if (!article?.content) {
-    return null;
-  }
-
-  const turndown = createTurndownService();
-  const markdown = turndown.turndown(article.content).replace(/\n{3,}/g, '\n\n').trim();
-  return markdown.length > 100 ? markdown : null;
-}
-
-async function fetchArticleMarkdown(url: string): Promise<string | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), ARTICLE_FETCH_TIMEOUT_MS);
-
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'AI-Daily-Digest/1.0 (Article Reader)',
-        'Accept': 'text/html,application/xhtml+xml,text/markdown,text/plain,*/*',
-      },
-      redirect: 'follow',
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    const body = await response.text();
-
-    if (contentType.includes('text/markdown') || url.endsWith('.md')) {
-      const markdown = body.trim();
-      return markdown.length > 100 ? markdown : null;
-    }
-
-    return extractArticleMarkdownFromHtml(body);
-  } catch {
-    return null;
-  }
-}
-
-function buildClippingMarkdown(article: ScoredArticle, content: string): string {
-  const dateStr = article.pubDate.toISOString().slice(0, 10);
-  const lines = [
-    `# ${article.titleZh || article.title}`,
-    '',
-    `> 来源: [${article.sourceName}](${article.sourceUrl})`,
-    `> 原文: [${article.title}](${article.link})`,
-    `> 发布: ${dateStr}`,
-    '',
-    '---',
-    '',
-    content,
-  ];
-  return lines.join('\n');
-}
-
-async function saveArticleClippings(
-  articles: ScoredArticle[],
-  clippingsDir: string,
-  concurrency: number,
-  aiClient: AIClient
-): Promise<number> {
-  await mkdir(clippingsDir, { recursive: true });
-
-  const datePrefix = formatDateCompact();
-  const usedNames = new Set<string>();
-  const tasks = articles.map((article) => {
-    const baseName = sanitizeFilename(article.title);
-    let fileName = `${datePrefix}-${baseName}.md`;
-
-    if (usedNames.has(fileName)) {
-      let suffix = 2;
-      while (usedNames.has(`${datePrefix}-${baseName}-${suffix}.md`)) {
-        suffix++;
-      }
-      fileName = `${datePrefix}-${baseName}-${suffix}.md`;
-    }
-    usedNames.add(fileName);
-
-    return { article, fileName };
-  });
-
-  let savedCount = 0;
-
-  await runWithConcurrency(tasks.length, concurrency, async (index) => {
-    const { article, fileName } = tasks[index]!;
-    const rawMarkdown = await fetchArticleMarkdown(article.link);
-    if (!rawMarkdown) {
-      console.warn(`[digest] ✗ Clipping failed: ${article.title}`);
-      return;
-    }
-
-    const content = await addBilingualTranslation(rawMarkdown, aiClient);
-    const filePath = `${clippingsDir}/${fileName}`;
-    await writeFile(filePath, buildClippingMarkdown(article, content), 'utf8');
-    savedCount++;
-    console.log(`[digest] ✓ Clipping saved: ${fileName}`);
-  });
-
-  return savedCount;
-}
-
-// ============================================================================
 // CLI
 // ============================================================================
 
@@ -1393,7 +764,7 @@ Options:
   --feed-concurrency <n> Max concurrent RSS fetches (default: 50)
   --ai-concurrency <n> Max concurrent AI batch requests (default: 6)
   --clippings-dir <path> Directory to save full article markdown (default: ~/my-kb/raw/clippings)
-  --clippings-concurrency <n> Max concurrent article fetches for clippings (default: 4)
+  --clippings-concurrency <n> Max concurrent article fetches for clippings (default: 2)
   --output <path> Output file path (default: ./digest-YYYYMMDD.md)
   --help          Show this help
 
@@ -1512,19 +883,25 @@ async function main(): Promise<void> {
   console.log(`[digest] Step 3/6: AI scoring ${recentArticles.length} articles...`);
   const scores = await scoreArticlesWithAI(recentArticles, aiClient, aiConcurrency);
   
-  const scoredArticles = recentArticles.map((article, index) => {
-    const score = scores.get(index) || { relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [] };
+  const scoredArticles: RankedArticle[] = recentArticles.map((article, index) => {
+    const score = scores.get(index) || {
+      relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc',
+    };
     return {
       ...article,
       totalScore: score.relevance + score.quality + score.timeliness,
       breakdown: score,
     };
   });
-  
-  scoredArticles.sort((a, b) => b.totalScore - a.totalScore);
-  const topArticles = scoredArticles.slice(0, topN);
-  
-  console.log(`[digest] Top ${topN} articles selected (score range: ${topArticles[topArticles.length - 1]?.totalScore || 0} - ${topArticles[0]?.totalScore || 0})`);
+
+  const { selected: topArticles, skippedByDiversity } = selectDiverseTopArticles(scoredArticles, topN);
+
+  console.log(
+    `[digest] Top ${topN} selected with topic diversity (max 2/topic, skipped ${skippedByDiversity} similar)`
+  );
+  console.log(
+    `[digest] Score range: ${topArticles[topArticles.length - 1]?.totalScore || 0} - ${topArticles[0]?.totalScore || 0}`
+  );
   
   console.log(`[digest] Step 4/6: Generating AI summaries...`);
   const indexedTopArticles = topArticles.map((a, i) => ({ ...a, index: i }));
@@ -1567,7 +944,6 @@ async function main(): Promise<void> {
     totalArticles: allArticles.length,
     filteredArticles: recentArticles.length,
     hours,
-    lang,
   });
   
   await mkdir(dirname(outputPath), { recursive: true });
