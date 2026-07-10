@@ -1113,36 +1113,73 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
   return blocks;
 }
 
-function countChineseChars(text: string): number {
-  return (text.match(/[\u4e00-\u9fff]/g) || []).length;
+function stripForLanguageDetection(text: string): string {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/[#>*_\[\]()!~`|]/g, '')
+    .replace(/\s+/g, '')
+    .trim();
 }
 
-function isMostlyChinese(text: string): boolean {
-  const meaningful = text.replace(/[#>*\-\[\]()!`~\d\s]/g, '');
-  if (!meaningful) return false;
-  return countChineseChars(meaningful) / meaningful.length > 0.3;
+function countChineseChars(text: string): number {
+  return (text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g) || []).length;
+}
+
+function countTranslatableLetters(text: string): number {
+  return (text.match(/[a-zA-Z\u0400-\u04ff\u00C0-\u024F\u1E00-\u1EFF\u0370-\u03ff\u0590-\u05ff\u0600-\u06ff\u0900-\u097f\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
+}
+
+function isChineseContent(text: string): boolean {
+  const plain = stripForLanguageDetection(text);
+  if (!plain) return false;
+
+  const chineseCount = countChineseChars(plain);
+  if (chineseCount === 0) return false;
+
+  const letterCount = chineseCount + countTranslatableLetters(plain);
+  if (letterCount === 0) return false;
+
+  // 段落里中文字符占比高，视为中文内容，不再翻译
+  return chineseCount / letterCount >= 0.2;
+}
+
+function isDocumentMostlyChinese(text: string): boolean {
+  const plain = stripForLanguageDetection(text);
+  if (!plain) return false;
+
+  const chineseCount = countChineseChars(plain);
+  const letterCount = chineseCount + countTranslatableLetters(plain);
+  if (letterCount === 0) return chineseCount > 0;
+
+  return chineseCount / letterCount >= 0.35;
 }
 
 function shouldTranslateBlock(content: string): boolean {
   const plain = content.replace(/^#{1,6}\s+/, '').trim();
-  if (!plain) return false;
-  if (isMostlyChinese(plain)) return false;
-  if (plain.length < 12) return false;
+  if (!plain || plain.length < 8) return false;
+  if (isChineseContent(content)) return false;
   if (/^!\[.*\]\(.*\)$/.test(plain)) return false;
   if (/^https?:\/\//.test(plain)) return false;
-  return true;
+
+  // 仅翻译含非中文书写系统的内容（英文、俄语、西语等）
+  return countTranslatableLetters(plain) >= 4;
 }
 
 async function translateTextBlocks(blocks: string[], aiClient: AIClient): Promise<string[]> {
   if (blocks.length === 0) return [];
 
-  const prompt = `你是沉浸式翻译助手。请将以下 Markdown 段落逐条翻译成自然流畅的中文。
+  const prompt = `你是沉浸式翻译助手。以下 Markdown 段落来自英文、俄语、西班牙语等非中文原文，请逐条翻译为自然流畅的中文。
 
 要求：
+- 输入已是中文的段落不要翻译，translations 中对应 index 返回空字符串 ""
 - 保留原文中的链接、代码片段、专有名词（可附中文说明）
 - 标题段落（以 # 开头）翻译后仍保留相同数量的 # 前缀
 - 列表项翻译后仍保留 - 或数字序号前缀
-- 语气忠实原文，便于阅读
 - 只返回 JSON，不要 markdown 代码块
 
 输入共 ${blocks.length} 条，按 index 返回翻译：
@@ -1152,7 +1189,7 @@ ${blocks.map((block, index) => `--- index ${index} ---\n${block}`).join('\n\n')}
 返回格式：
 {
   "translations": [
-    { "index": 0, "text": "中文翻译" }
+    { "index": 0, "text": "中文翻译，若原文已是中文则为空字符串" }
   ]
 }`;
 
@@ -1179,7 +1216,7 @@ async function addBilingualTranslation(markdown: string, aiClient: AIClient): Pr
   const textBlocks = blocks.filter(block => block.type === 'text');
   const allText = textBlocks.map(block => block.content).join('\n');
 
-  if (!allText.trim() || isMostlyChinese(allText)) {
+  if (!allText.trim() || isDocumentMostlyChinese(allText)) {
     return markdown;
   }
 
@@ -1200,9 +1237,8 @@ async function addBilingualTranslation(markdown: string, aiClient: AIClient): Pr
     const translated = await translateTextBlocks(batch.map(item => item.content), aiClient);
     batch.forEach((item, index) => {
       const text = translated[index]?.trim();
-      if (text) {
-        translations.set(item.blockIndex, text);
-      }
+      if (!text || text === item.content.trim()) return;
+      translations.set(item.blockIndex, text);
     });
   }
 
