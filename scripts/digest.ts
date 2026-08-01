@@ -1,6 +1,13 @@
+import { spawn } from 'node:child_process';
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import process from 'node:process';
+import {
+  CheckpointStore,
+  deserializeArticle,
+  deserializeRanked,
+  serializeArticle,
+} from './checkpoint.ts';
 import { saveArticleClippings } from './clippings.ts';
 import { selectDiverseTopArticles, normalizeTopicSlug } from './diversity.ts';
 import { generateDigestReport } from './report.ts';
@@ -15,6 +22,26 @@ import type {
 } from './types.ts';
 import { parseJsonResponse, parsePositiveInt, runWithConcurrency } from './utils.ts';
 
+/** 爬取阶段结束后、真正调用大模型前，按需启动本地 LLM（由 DIGEST_ENSURE_LLM_CMD 指定） */
+async function ensureLLMReady(): Promise<void> {
+  const cmd = process.env.DIGEST_ENSURE_LLM_CMD?.trim();
+  if (!cmd) return;
+
+  console.log(`[digest] Ensuring LLM ready via: ${cmd}`);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, {
+      shell: true,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`DIGEST_ENSURE_LLM_CMD exited with code ${code}`));
+    });
+  });
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -24,10 +51,42 @@ const OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1';
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
 const FEED_FETCH_TIMEOUT_MS = 15_000;
 const DEFAULT_FEED_CONCURRENCY = 50;
-const GEMINI_BATCH_SIZE = 2;
-const DEFAULT_AI_CONCURRENCY = 6;
-const DEFAULT_CLIPPINGS_CONCURRENCY = 2;
 const DEFAULT_CLIPPINGS_DIR = '/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings';
+
+/**
+ * 本地 RTX 4090 (24GB) + Qwen3.6-27B / vLLM 调参要点：
+ * - 单卡 KV cache 有限，并发过高只会排队、挤占显存，吞吐不升反降
+ * - vLLM continuous batching：2~4 路并发 + 更大「单请求内文章数」更划算
+ * - 评分输出短 → batch 可更大；摘要/翻译输出长 → batch 略小
+ */
+const LOCAL_LLM_PROFILE = {
+  aiConcurrency: 3,
+  scoreBatchSize: 10,
+  summaryBatchSize: 6,
+  clippingsConcurrency: 3,
+  translateBatch: 8,
+  translateConcurrency: 2,
+} as const;
+
+const CLOUD_LLM_PROFILE = {
+  aiConcurrency: 6,
+  scoreBatchSize: 12,
+  summaryBatchSize: 8,
+  clippingsConcurrency: 4,
+  translateBatch: 8,
+  translateConcurrency: 3,
+} as const;
+
+type LlmProfile = typeof LOCAL_LLM_PROFILE;
+
+function isLocalApiBase(apiBase: string | undefined): boolean {
+  const base = apiBase || '';
+  return /127\.0\.0\.1|localhost|192\.168\.|10\.\d+\.|172\.(1[6-9]|2\d|3[01])\./.test(base);
+}
+
+function resolveLlmProfile(apiBase: string | undefined): LlmProfile {
+  return isLocalApiBase(apiBase) ? LOCAL_LLM_PROFILE : CLOUD_LLM_PROFILE;
+}
 
 const RSS_FEEDS_FILE = new URL('../rss.txt', import.meta.url);
 
@@ -198,60 +257,70 @@ function parseDate(dateStr: string): Date | null {
   return null;
 }
 
-function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDate: string; description: string }> {
+/** RSS 通常倒序排列；连续遇到这么多「明确过期」条目后停止解析该 feed */
+const FEED_OLD_STREAK_STOP = 5;
+
+function parseRSSItems(
+  xml: string,
+  cutoffMs?: number
+): Array<{ title: string; link: string; pubDate: string; description: string }> {
   const items: Array<{ title: string; link: string; pubDate: string; description: string }> = [];
-  
-  // Detect format: Atom vs RSS
+  let oldStreak = 0;
+  let keptAny = false;
+
+  const maybeKeep = (title: string, link: string, pubDate: string, description: string): boolean => {
+    if (!title && !link) return true;
+    if (cutoffMs !== undefined) {
+      const parsed = parseDate(pubDate);
+      if (parsed) {
+        if (parsed.getTime() <= cutoffMs) {
+          oldStreak++;
+          // 已收录过新文且连续多条过期 → 视为倒序 feed，提前结束
+          if (keptAny && oldStreak >= FEED_OLD_STREAK_STOP) return false;
+          return true;
+        }
+        oldStreak = 0;
+      }
+    }
+    items.push({ title, link, pubDate, description: description.slice(0, 500) });
+    keptAny = true;
+    return true;
+  };
+
   const isAtom = xml.includes('<feed') && xml.includes('xmlns="http://www.w3.org/2005/Atom"') || xml.includes('<feed ');
-  
+
   if (isAtom) {
-    // Atom format: <entry>
     const entryPattern = /<entry[\s>]([\s\S]*?)<\/entry>/gi;
     let entryMatch;
     while ((entryMatch = entryPattern.exec(xml)) !== null) {
       const entryXml = entryMatch[1];
       const title = stripHtml(getTagContent(entryXml, 'title'));
-      
-      // Atom link: <link href="..." rel="alternate"/>
       let link = getAttrValue(entryXml, 'link[^>]*rel="alternate"', 'href');
-      if (!link) {
-        link = getAttrValue(entryXml, 'link', 'href');
-      }
-      
-      const pubDate = getTagContent(entryXml, 'published') 
-        || getTagContent(entryXml, 'updated');
-      
+      if (!link) link = getAttrValue(entryXml, 'link', 'href');
+      const pubDate = getTagContent(entryXml, 'published') || getTagContent(entryXml, 'updated');
       const description = stripHtml(
-        getTagContent(entryXml, 'summary') 
-        || getTagContent(entryXml, 'content')
+        getTagContent(entryXml, 'summary') || getTagContent(entryXml, 'content')
       );
-      
-      if (title || link) {
-        items.push({ title, link, pubDate, description: description.slice(0, 500) });
-      }
+      if (!maybeKeep(title, link, pubDate, description)) break;
     }
   } else {
-    // RSS format: <item>
     const itemPattern = /<item[\s>]([\s\S]*?)<\/item>/gi;
     let itemMatch;
     while ((itemMatch = itemPattern.exec(xml)) !== null) {
       const itemXml = itemMatch[1];
       const title = stripHtml(getTagContent(itemXml, 'title'));
       const link = getTagContent(itemXml, 'link') || getTagContent(itemXml, 'guid');
-      const pubDate = getTagContent(itemXml, 'pubDate') 
+      const pubDate =
+        getTagContent(itemXml, 'pubDate')
         || getTagContent(itemXml, 'dc:date')
         || getTagContent(itemXml, 'date');
       const description = stripHtml(
-        getTagContent(itemXml, 'description') 
-        || getTagContent(itemXml, 'content:encoded')
+        getTagContent(itemXml, 'description') || getTagContent(itemXml, 'content:encoded')
       );
-      
-      if (title || link) {
-        items.push({ title, link, pubDate, description: description.slice(0, 500) });
-      }
+      if (!maybeKeep(title, link, pubDate, description)) break;
     }
   }
-  
+
   return items;
 }
 
@@ -259,11 +328,11 @@ function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDat
 // Feed Fetching
 // ============================================================================
 
-async function fetchFeed(feed: FeedSource): Promise<Article[]> {
+async function fetchFeed(feed: FeedSource, cutoffMs: number): Promise<Article[]> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FEED_FETCH_TIMEOUT_MS);
-    
+
     const response = await fetch(feed.xmlUrl, {
       signal: controller.signal,
       headers: {
@@ -271,27 +340,29 @@ async function fetchFeed(feed: FeedSource): Promise<Article[]> {
         'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
       },
     });
-    
+
     clearTimeout(timeout);
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const xml = await response.text();
-    const items = parseRSSItems(xml);
-    
-    return items.map(item => ({
-      title: item.title,
-      link: item.link,
-      pubDate: parseDate(item.pubDate) || new Date(0),
-      description: item.description,
-      sourceName: feed.name,
-      sourceUrl: feed.htmlUrl,
-    }));
+    // 解析时即按时间窗口过滤（RSS 协议本身无法只请求「最新一天」）
+    const items = parseRSSItems(xml, cutoffMs);
+
+    return items
+      .map(item => ({
+        title: item.title,
+        link: item.link,
+        pubDate: parseDate(item.pubDate) || new Date(0),
+        description: item.description,
+        sourceName: feed.name,
+        sourceUrl: feed.htmlUrl,
+      }))
+      .filter(a => a.pubDate.getTime() > cutoffMs);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    // Only log non-abort errors to reduce noise
     if (!msg.includes('abort')) {
       console.warn(`[digest] ✗ ${feed.name}: ${msg}`);
     } else {
@@ -301,28 +372,42 @@ async function fetchFeed(feed: FeedSource): Promise<Article[]> {
   }
 }
 
-async function fetchAllFeeds(feeds: FeedSource[], concurrency: number): Promise<Article[]> {
-  const allArticles: Article[] = [];
-  let successCount = 0;
-  let failCount = 0;
+async function fetchAllFeeds(
+  feeds: FeedSource[],
+  concurrency: number,
+  cutoffMs: number,
+  checkpoint?: CheckpointStore
+): Promise<{ articles: Article[]; successCount: number; failCount: number }> {
+  const doneUrls = new Set(checkpoint?.state.crawl.doneFeedXmlUrls || []);
+  const allArticles: Article[] = (checkpoint?.state.crawl.articles || []).map(deserializeArticle);
+  let successCount = checkpoint?.state.crawl.successCount || 0;
+  let failCount = checkpoint?.state.crawl.failCount || 0;
 
-  if (feeds.length === 0) {
-    return allArticles;
+  const pending = feeds.filter(f => !doneUrls.has(f.xmlUrl));
+  if (doneUrls.size > 0) {
+    console.log(`[digest] Crawl resume: ${doneUrls.size} feeds done, ${pending.length} remaining, ${allArticles.length} articles cached`);
   }
 
-  let completedCount = 0;
+  if (pending.length === 0) {
+    if (checkpoint && !checkpoint.state.crawl.complete) {
+      await checkpoint.updateCrawl(c => { c.complete = true; }, true);
+    }
+    return { articles: allArticles, successCount, failCount };
+  }
+
+  let completedCount = doneUrls.size;
   let nextIndex = 0;
-  const workerCount = Math.min(concurrency, feeds.length);
+  const workerCount = Math.min(concurrency, pending.length);
   const progressInterval = Math.max(10, Math.ceil(feeds.length / 20));
+  const totalFeeds = feeds.length;
 
   async function worker(): Promise<void> {
     while (true) {
       const currentIndex = nextIndex++;
-      if (currentIndex >= feeds.length) {
-        return;
-      }
+      if (currentIndex >= pending.length) return;
 
-      const articles = await fetchFeed(feeds[currentIndex]!);
+      const feed = pending[currentIndex]!;
+      const articles = await fetchFeed(feed, cutoffMs);
       if (articles.length > 0) {
         allArticles.push(...articles);
         successCount++;
@@ -330,17 +415,28 @@ async function fetchAllFeeds(feeds: FeedSource[], concurrency: number): Promise<
         failCount++;
       }
 
+      if (checkpoint) {
+        await checkpoint.updateCrawl(c => {
+          c.doneFeedXmlUrls.push(feed.xmlUrl);
+          c.articles.push(...articles.map(serializeArticle));
+          c.successCount = successCount;
+          c.failCount = failCount;
+        });
+      }
+
       completedCount++;
-      if (completedCount % progressInterval === 0 || completedCount === feeds.length) {
-        console.log(`[digest] Progress: ${completedCount}/${feeds.length} feeds processed (${successCount} ok, ${failCount} failed)`);
+      if (completedCount % progressInterval === 0 || completedCount === totalFeeds) {
+        console.log(`[digest] Progress: ${completedCount}/${totalFeeds} feeds (${successCount} with recent, ${failCount} empty/failed)`);
       }
     }
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-  console.log(`[digest] Fetched ${allArticles.length} articles from ${successCount} feeds (${failCount} failed)`);
-  return allArticles;
+  if (checkpoint) {
+    await checkpoint.updateCrawl(c => { c.complete = true; }, true);
+  }
+  console.log(`[digest] Kept ${allArticles.length} articles within window from ${successCount} feeds (${failCount} empty/failed)`);
+  return { articles: allArticles, successCount, failCount };
 }
 
 // ============================================================================
@@ -560,39 +656,59 @@ ${articlesList}
 async function scoreArticlesWithAI(
   articles: Article[],
   aiClient: AIClient,
-  aiConcurrency: number
+  aiConcurrency: number,
+  batchSize: number,
+  checkpoint?: CheckpointStore
 ): Promise<Map<number, ArticleScoreBreakdown>> {
   const allScores = new Map<number, ArticleScoreBreakdown>();
-  
+  const cached = checkpoint?.state.score.byIndex || {};
+  for (const [key, value] of Object.entries(cached)) {
+    allScores.set(Number(key), value);
+  }
+
   const indexed = articles.map((article, index) => ({
     index,
     title: article.title,
     description: article.description,
     sourceName: article.sourceName,
   }));
-  
-  const batches: typeof indexed[] = [];
-  for (let i = 0; i < indexed.length; i += GEMINI_BATCH_SIZE) {
-    batches.push(indexed.slice(i, i + GEMINI_BATCH_SIZE));
-  }
-  
-  console.log(`[digest] AI scoring: ${articles.length} articles in ${batches.length} batches`);
-  
-  const validCategories = new Set<string>(['ai-ml', 'security', 'engineering', 'tools', 'opinion', 'other']);
 
-  let completedBatches = 0;
-  await runWithConcurrency(batches.length, aiConcurrency, async (batchIndex) => {
+  const batches: typeof indexed[] = [];
+  for (let i = 0; i < indexed.length; i += batchSize) {
+    batches.push(indexed.slice(i, i + batchSize));
+  }
+
+  const pendingBatchIndices = batches
+    .map((_, batchIndex) => batchIndex)
+    .filter(batchIndex => {
+      const batch = batches[batchIndex]!;
+      return batch.some(item => !allScores.has(item.index));
+    });
+
+  console.log(
+    `[digest] AI scoring: ${articles.length} articles in ${batches.length} batches` +
+    (pendingBatchIndices.length < batches.length
+      ? ` (resume: ${batches.length - pendingBatchIndices.length} done, ${pendingBatchIndices.length} left)`
+      : '')
+  );
+
+  const validCategories = new Set<string>(['ai-ml', 'security', 'engineering', 'tools', 'opinion', 'other']);
+  let completedBatches = batches.length - pendingBatchIndices.length;
+
+  await runWithConcurrency(pendingBatchIndices.length, aiConcurrency, async (jobIndex) => {
+    const batchIndex = pendingBatchIndices[jobIndex]!;
     const batch = batches[batchIndex]!;
     try {
       const prompt = buildScoringPrompt(batch);
       const responseText = await aiClient.call(prompt);
       const parsed = parseJsonResponse<GeminiScoringResult>(responseText);
-      
+      const batchScores = new Map<number, ArticleScoreBreakdown>();
+
       if (parsed.results && Array.isArray(parsed.results)) {
         for (const result of parsed.results) {
           const clamp = (v: number) => Math.min(10, Math.max(1, Math.round(v)));
           const cat = (validCategories.has(result.category) ? result.category : 'other') as CategoryId;
-          allScores.set(result.index, {
+          batchScores.set(result.index, {
             relevance: clamp(result.relevance),
             quality: clamp(result.quality),
             timeliness: clamp(result.timeliness),
@@ -602,19 +718,43 @@ async function scoreArticlesWithAI(
           });
         }
       }
-    } catch (error) {
-      console.warn(`[digest] Scoring batch failed: ${error instanceof Error ? error.message : String(error)}`);
-      for (const item of batch) {
-        allScores.set(item.index, {
-          relevance: 5, quality: 5, timeliness: 5, category: 'other', keywords: [], topic: 'misc',
+
+      for (const [index, score] of batchScores) {
+        allScores.set(index, score);
+      }
+      if (checkpoint && batchScores.size > 0) {
+        await checkpoint.updateScore(s => {
+          for (const [index, score] of batchScores) {
+            s.byIndex[String(index)] = score;
+          }
         });
       }
+    } catch (error) {
+      // 不写入默认分，便于断点重试该 batch
+      console.warn(`[digest] Scoring batch failed (will retry on resume): ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       completedBatches++;
       console.log(`[digest] Scoring progress: ${completedBatches}/${batches.length} batches`);
     }
   });
-  
+
+  // 仍缺失的条目填默认分（保证下游可继续），并写入 checkpoint
+  for (const item of indexed) {
+    if (!allScores.has(item.index)) {
+      const fallback: ArticleScoreBreakdown = {
+        relevance: 5, quality: 5, timeliness: 5, category: 'other', keywords: [], topic: 'misc',
+      };
+      allScores.set(item.index, fallback);
+      if (checkpoint) {
+        await checkpoint.updateScore(s => { s.byIndex[String(item.index)] = fallback; });
+      }
+    }
+  }
+
+  if (checkpoint) {
+    await checkpoint.updateScore(s => { s.complete = true; }, true);
+    await checkpoint.flush();
+  }
   return allScores;
 }
 
@@ -673,10 +813,15 @@ async function summarizeArticles(
   articles: Array<Article & { index: number }>,
   aiClient: AIClient,
   lang: 'zh' | 'en',
-  aiConcurrency: number
+  aiConcurrency: number,
+  batchSize: number,
+  checkpoint?: CheckpointStore
 ): Promise<Map<number, { titleZh: string; summary: string; reason: string }>> {
   const summaries = new Map<number, { titleZh: string; summary: string; reason: string }>();
-  
+  for (const [key, value] of Object.entries(checkpoint?.state.summaries || {})) {
+    summaries.set(Number(key), value);
+  }
+
   const indexed = articles.map(a => ({
     index: a.index,
     title: a.title,
@@ -684,42 +829,63 @@ async function summarizeArticles(
     sourceName: a.sourceName,
     link: a.link,
   }));
-  
-  const batches: typeof indexed[] = [];
-  for (let i = 0; i < indexed.length; i += GEMINI_BATCH_SIZE) {
-    batches.push(indexed.slice(i, i + GEMINI_BATCH_SIZE));
-  }
-  
-  console.log(`[digest] Generating summaries for ${articles.length} articles in ${batches.length} batches`);
 
-  let completedBatches = 0;
-  await runWithConcurrency(batches.length, aiConcurrency, async (batchIndex) => {
+  const batches: typeof indexed[] = [];
+  for (let i = 0; i < indexed.length; i += batchSize) {
+    batches.push(indexed.slice(i, i + batchSize));
+  }
+
+  const pendingBatchIndices = batches
+    .map((_, batchIndex) => batchIndex)
+    .filter(batchIndex => batches[batchIndex]!.some(item => !summaries.has(item.index)));
+
+  console.log(
+    `[digest] Generating summaries for ${articles.length} articles in ${batches.length} batches` +
+    (pendingBatchIndices.length < batches.length
+      ? ` (resume: ${batches.length - pendingBatchIndices.length} done, ${pendingBatchIndices.length} left)`
+      : '')
+  );
+
+  let completedBatches = batches.length - pendingBatchIndices.length;
+  await runWithConcurrency(pendingBatchIndices.length, aiConcurrency, async (jobIndex) => {
+    const batchIndex = pendingBatchIndices[jobIndex]!;
     const batch = batches[batchIndex]!;
     try {
       const prompt = buildSummaryPrompt(batch, lang);
       const responseText = await aiClient.call(prompt);
       const parsed = parseJsonResponse<GeminiSummaryResult>(responseText);
-      
+
       if (parsed.results && Array.isArray(parsed.results)) {
         for (const result of parsed.results) {
-          summaries.set(result.index, {
+          const value = {
             titleZh: result.titleZh || '',
             summary: result.summary || '',
             reason: result.reason || '',
-          });
+          };
+          summaries.set(result.index, value);
+          if (checkpoint) await checkpoint.setSummary(result.index, value);
         }
       }
     } catch (error) {
-      console.warn(`[digest] Summary batch failed: ${error instanceof Error ? error.message : String(error)}`);
-      for (const item of batch) {
-        summaries.set(item.index, { titleZh: item.title, summary: item.title, reason: '' });
-      }
+      console.warn(`[digest] Summary batch failed (will retry on resume): ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       completedBatches++;
       console.log(`[digest] Summary progress: ${completedBatches}/${batches.length} batches`);
     }
   });
-  
+
+  for (const item of indexed) {
+    if (!summaries.has(item.index)) {
+      const value = { titleZh: item.title, summary: item.title, reason: '' };
+      summaries.set(item.index, value);
+      if (checkpoint) await checkpoint.setSummary(item.index, value);
+    }
+  }
+
+  if (checkpoint) {
+    checkpoint.state.summarizeComplete = true;
+    await checkpoint.flush();
+  }
   return summaries;
 }
 
@@ -776,10 +942,13 @@ Options:
   --top-n <n>     Number of top articles to include (default: 30)
   --lang <lang>   Summary language: zh or en (default: zh)
   --feed-concurrency <n> Max concurrent RSS fetches (default: 50)
-  --ai-concurrency <n> Max concurrent AI batch requests (default: 6)
-  --clippings-dir <path> Directory to save full article markdown (default: ~/my-kb/raw/clippings)
-  --clippings-concurrency <n> Max concurrent article fetches for clippings (default: 2)
+  --ai-concurrency <n> Max concurrent AI requests (local 4090 default: 3)
+  --score-batch <n>    Articles per scoring request (local default: 10)
+  --summary-batch <n>  Articles per summary request (local default: 6)
+  --clippings-dir <path> Directory to save full article markdown
+  --clippings-concurrency <n> Concurrent clipping jobs (local default: 3)
   --output <path> Output file path (default: ./digest-YYYYMMDD.md)
+  --fresh         Ignore existing checkpoint and start a new run
   --help          Show this help
 
 Environment:
@@ -788,30 +957,61 @@ Environment:
   OPENAI_API_BASE  Optional fallback base URL (default: https://api.openai.com/v1)
   OPENAI_MODEL     Optional fallback model (default: deepseek-chat for DeepSeek base, else gpt-4o-mini)
   FEED_CONCURRENCY Optional RSS fetch concurrency override
-  AI_CONCURRENCY   Optional AI batch concurrency override
+  AI_CONCURRENCY / SCORE_BATCH / SUMMARY_BATCH / CLIPPINGS_CONCURRENCY
+  DIGEST_CACHE_DIR Optional checkpoint directory (default: .cache/digest)
+  DIGEST_ENSURE_LLM_CMD  Optional shell command run after crawl, before AI scoring
+
+Checkpoint:
+  默认自动断点续跑。进度保存在 .cache/digest/checkpoint-*.json
+  中断后用相同 --hours/--top-n/--lang 再跑即可从断点继续；--fresh 强制重来。
 
 Examples:
   bun scripts/digest.ts --hours 24 --top-n 30 --lang zh
-  bun scripts/digest.ts --feed-concurrency 80 --hours 24 --top-n 30 --lang zh
-  bun scripts/digest.ts --ai-concurrency 12 --hours 24 --top-n 30 --lang zh
-  bun scripts/digest.ts --hours 72 --top-n 30 --lang en --output ./my-digest.md
+  bun scripts/digest.ts --hours 24 --top-n 30 --lang zh   # resume after crash
+  bun scripts/digest.ts --fresh --hours 24 --top-n 30 --lang zh
 `);
   process.exit(0);
+}
+
+function prefilterForLocalLLM(recentArticles: Article[], topN: number): Article[] {
+  if (recentArticles.length <= topN * 2) return recentArticles;
+  console.log(`[digest] Pre-filtering ${recentArticles.length} articles for local LLM (target: ~${topN * 2})...`);
+  const techKeywords = /\b(ai|llm|gpt|claude|gemini|machine learning|deep learning|neural|transformer|diffusion|agent|rag|embedding|vector|python|rust|golang|typescript|javascript|kubernetes|docker|linux|security|vulnerability|exploit|database|postgres|redis|api|grpc|websocket|performance|optimization|scalability|distributed|blockchain|crypto|web3|devops|ci\/cd|git|open source|oss|framework|library|sdk|cli|gui|ui\/ux|frontend|backend|fullstack|cloud|aws|azure|gcp|serverless|microservice|architecture|algorithm|data structure|compiler|interpreter|browser|web|mobile|ios|android)\b/i;
+
+  const scored = recentArticles.map((article, idx) => {
+    let score = 0;
+    const text = `${article.title} ${article.description}`.toLowerCase();
+    if (techKeywords.test(text)) score += 3;
+    if (article.title.length > 20) score += 1;
+    if (article.description.length > 100) score += 1;
+    if (/\b(new|release|launch|announce|update|fix|bug|vulnerability|breakthrough|introducing)\b/i.test(article.title)) score += 2;
+    return { idx, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const preFilterCount = Math.min(topN * 2, recentArticles.length);
+  const selectedIndices = new Set(scored.slice(0, preFilterCount).map(s => s.idx));
+  const filtered = recentArticles.filter((_, idx) => selectedIndices.has(idx));
+  console.log(`[digest] Pre-filtered to ${filtered.length} candidates for AI scoring`);
+  return filtered;
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) printUsage();
-  
+
   let hours = 48;
   let topN = 30;
   let lang: 'zh' | 'en' = 'zh';
   let outputPath = '';
+  let fresh = false;
   let clippingsDir = process.env.CLIPPINGS_DIR?.trim() || DEFAULT_CLIPPINGS_DIR;
-  let clippingsConcurrency = parsePositiveInt(process.env.CLIPPINGS_CONCURRENCY, DEFAULT_CLIPPINGS_CONCURRENCY);
   let feedConcurrency = parsePositiveInt(process.env.FEED_CONCURRENCY, DEFAULT_FEED_CONCURRENCY);
-  let aiConcurrency = parsePositiveInt(process.env.AI_CONCURRENCY, DEFAULT_AI_CONCURRENCY);
-  
+  let aiConcurrency: number | undefined;
+  let scoreBatch: number | undefined;
+  let summaryBatch: number | undefined;
+  let clippingsConcurrency: number | undefined;
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === '--hours' && args[i + 1]) {
@@ -823,20 +1023,36 @@ async function main(): Promise<void> {
     } else if (arg === '--feed-concurrency' && args[i + 1]) {
       feedConcurrency = parsePositiveInt(args[++i], feedConcurrency);
     } else if (arg === '--ai-concurrency' && args[i + 1]) {
-      aiConcurrency = parsePositiveInt(args[++i], aiConcurrency);
+      aiConcurrency = parsePositiveInt(args[++i], 3);
+    } else if (arg === '--score-batch' && args[i + 1]) {
+      scoreBatch = parsePositiveInt(args[++i], 10);
+    } else if (arg === '--summary-batch' && args[i + 1]) {
+      summaryBatch = parsePositiveInt(args[++i], 6);
     } else if (arg === '--clippings-dir' && args[i + 1]) {
       clippingsDir = args[++i]!;
     } else if (arg === '--clippings-concurrency' && args[i + 1]) {
-      clippingsConcurrency = parsePositiveInt(args[++i], clippingsConcurrency);
+      clippingsConcurrency = parsePositiveInt(args[++i], 3);
     } else if (arg === '--output' && args[i + 1]) {
       outputPath = args[++i]!;
+    } else if (arg === '--fresh') {
+      fresh = true;
     }
   }
-  
+
   const geminiApiKey = process.env.GEMINI_API_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
   const openaiApiBase = process.env.OPENAI_API_BASE;
   const openaiModel = process.env.OPENAI_MODEL;
+
+  const profile = resolveLlmProfile(openaiApiBase);
+  aiConcurrency = aiConcurrency
+    ?? parsePositiveInt(process.env.AI_CONCURRENCY, profile.aiConcurrency);
+  scoreBatch = scoreBatch
+    ?? parsePositiveInt(process.env.SCORE_BATCH, profile.scoreBatchSize);
+  summaryBatch = summaryBatch
+    ?? parsePositiveInt(process.env.SUMMARY_BATCH, profile.summaryBatchSize);
+  clippingsConcurrency = clippingsConcurrency
+    ?? parsePositiveInt(process.env.CLIPPINGS_CONCURRENCY, profile.clippingsConcurrency);
 
   if (!geminiApiKey && !openaiApiKey) {
     console.error('[digest] Error: Missing API key. Set GEMINI_API_KEY and/or OPENAI_API_KEY.');
@@ -850,20 +1066,25 @@ async function main(): Promise<void> {
     openaiApiBase,
     openaiModel,
   });
-  
+
   if (!outputPath) {
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     outputPath = `./digest-${dateStr}.md`;
   }
-  
+
+  const checkpoint = await CheckpointStore.open({ hours, topN, lang, fresh });
+
   console.log(`[digest] === AI Daily Digest ===`);
   console.log(`[digest] Time range: ${hours} hours`);
   console.log(`[digest] Top N: ${topN}`);
   console.log(`[digest] Language: ${lang}`);
   console.log(`[digest] Feed concurrency: ${feedConcurrency}`);
-  console.log(`[digest] AI concurrency: ${aiConcurrency}`);
+  console.log(`[digest] LLM profile: ${isLocalApiBase(openaiApiBase) ? 'local RTX4090/Qwen' : 'cloud'}`);
+  console.log(`[digest] AI concurrency: ${aiConcurrency} | score-batch: ${scoreBatch} | summary-batch: ${summaryBatch}`);
+  console.log(`[digest] Clippings concurrency: ${clippingsConcurrency}`);
   console.log(`[digest] Clippings dir: ${clippingsDir}`);
   console.log(`[digest] Output: ${outputPath}`);
+  console.log(`[digest] Stage: ${checkpoint.state.stage}`);
   console.log(`[digest] AI provider: ${geminiApiKey ? 'Gemini (primary)' : 'OpenAI-compatible (primary)'}`);
   if (openaiApiKey) {
     const resolvedBase = (openaiApiBase?.trim() || OPENAI_DEFAULT_API_BASE).replace(/\/+$/, '');
@@ -871,70 +1092,83 @@ async function main(): Promise<void> {
     console.log(`[digest] Fallback: ${resolvedBase} (model=${resolvedModel})`);
   }
   console.log('');
-  
+
   const rssFeeds = await loadRSSFeeds();
+  const cutoffMs = Date.now() - hours * 60 * 60 * 1000;
   console.log(`[digest] RSS sources loaded from rss.txt: ${rssFeeds.length}`);
-  console.log(`[digest] Step 1/6: Fetching ${rssFeeds.length} RSS feeds...`);
-  const allArticles = await fetchAllFeeds(rssFeeds, feedConcurrency);
-  
-  if (allArticles.length === 0) {
-    console.error('[digest] Error: No articles fetched from any feed. Check network connection.');
-    process.exit(1);
+
+  // --- Stage: crawl ---
+  let recentArticles: Article[];
+  let successCount: number;
+  if (checkpoint.state.crawl.complete) {
+    recentArticles = checkpoint.state.crawl.articles.map(deserializeArticle);
+    successCount = checkpoint.state.crawl.successCount;
+    console.log(`[digest] Step 1/5: Crawl cached (${recentArticles.length} articles, skip fetch)`);
+  } else {
+    await checkpoint.setStage('crawl');
+    console.log(`[digest] Step 1/5: Fetching feeds (keep last ${hours}h only, parse-time filter)...`);
+    const result = await fetchAllFeeds(rssFeeds, feedConcurrency, cutoffMs, checkpoint);
+    recentArticles = result.articles;
+    successCount = result.successCount;
   }
-  
-  console.log(`[digest] Step 2/6: Filtering by time range (${hours} hours)...`);
-  const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
-  const recentArticles = allArticles.filter(a => a.pubDate.getTime() > cutoffTime.getTime());
-  
-  console.log(`[digest] Found ${recentArticles.length} articles within last ${hours} hours`);
-  
+
   if (recentArticles.length === 0) {
     console.error(`[digest] Error: No articles found within the last ${hours} hours.`);
     console.error(`[digest] Try increasing --hours (e.g., --hours 168 for one week)`);
     process.exit(1);
   }
-  
-  // Pre-filter for local LLM: reduce candidates to ~2x top-N using keyword heuristics
-  const isLocalLLM = openaiApiBase?.includes('127.0.0.1') || openaiApiBase?.includes('localhost');
-  let articlesToScore = recentArticles;
-  if (isLocalLLM && recentArticles.length > topN * 2) {
-    console.log(`[digest] Pre-filtering ${recentArticles.length} articles for local LLM (target: ~${topN * 2})...`);
-    const techKeywords = /\b(ai|llm|gpt|claude|gemini|machine learning|deep learning|neural|transformer|diffusion|agent|rag|embedding|vector|python|rust|golang|typescript|javascript|kubernetes|docker|linux|security|vulnerability|exploit|database|postgres|redis|api|grpc|websocket|performance|optimization|scalability|distributed|blockchain|crypto|web3|devops|ci\/cd|git|open source|oss|framework|library|sdk|cli|gui|ui\/ux|frontend|backend|fullstack|cloud|aws|azure|gcp|serverless|microservice|architecture|algorithm|data structure|compiler|interpreter|browser|web|mobile|ios|android)\b/i;
-    
-    const scored = recentArticles.map((article, idx) => {
-      let score = 0;
-      const text = `${article.title} ${article.description}`.toLowerCase();
-      if (techKeywords.test(text)) score += 3;
-      if (article.title.length > 20) score += 1;
-      if (article.description.length > 100) score += 1;
-      if (/\b(new|release|launch|announce|update|fix|bug|vulnerability|breakthrough|introducing)\b/i.test(article.title)) score += 2;
-      return { idx, score };
-    });
-    
-    scored.sort((a, b) => b.score - a.score);
-    const preFilterCount = Math.min(topN * 2, recentArticles.length);
-    const selectedIndices = new Set(scored.slice(0, preFilterCount).map(s => s.idx));
-    articlesToScore = recentArticles.filter((_, idx) => selectedIndices.has(idx));
-    console.log(`[digest] Pre-filtered to ${articlesToScore.length} candidates for AI scoring`);
+
+  const byLink = new Map(recentArticles.map(a => [a.link, a]));
+  const isLocalLLM = isLocalApiBase(openaiApiBase);
+
+  let articlesToScore: Article[];
+  if (checkpoint.state.score.candidateLinks.length > 0) {
+    articlesToScore = checkpoint.state.score.candidateLinks
+      .map(link => byLink.get(link))
+      .filter((a): a is Article => Boolean(a));
+    console.log(`[digest] Score candidates restored: ${articlesToScore.length}`);
+  } else {
+    articlesToScore = isLocalLLM ? prefilterForLocalLLM(recentArticles, topN) : recentArticles;
+    await checkpoint.updateScore(s => {
+      s.candidateLinks = articlesToScore.map(a => a.link);
+    }, true);
   }
-  
-  console.log(`[digest] Step 3/6: AI scoring ${articlesToScore.length} articles...`);
-  const scores = await scoreArticlesWithAI(articlesToScore, aiClient, aiConcurrency);
-  
-  // Build a lookup: article object -> score (using object identity)
-  const articleScoreMap = new Map<object, ArticleScoreBreakdown>();
-  if (articlesToScore !== recentArticles) {
-    // Pre-filtered: scores are indexed 0..N relative to articlesToScore
-    articlesToScore.forEach((article, position) => {
-      const score = scores.get(position);
-      if (score) articleScoreMap.set(article, score);
-    });
+
+  const needsLLM =
+    !checkpoint.state.score.complete
+    || !checkpoint.state.summarizeComplete
+    || !checkpoint.state.highlightsComplete
+    || !checkpoint.state.clippingsComplete;
+
+  if (needsLLM) {
+    await ensureLLMReady();
   }
-  
+
+  // --- Stage: score ---
+  let scores: Map<number, ArticleScoreBreakdown>;
+  if (checkpoint.state.score.complete) {
+    scores = new Map(
+      Object.entries(checkpoint.state.score.byIndex).map(([k, v]) => [Number(k), v])
+    );
+    console.log(`[digest] Step 2/5: Scoring cached (${scores.size} scores, skip AI)`);
+  } else {
+    await checkpoint.setStage('score');
+    console.log(`[digest] Step 2/5: AI scoring ${articlesToScore.length} articles...`);
+    scores = await scoreArticlesWithAI(articlesToScore, aiClient, aiConcurrency, scoreBatch, checkpoint);
+  }
+
+  const articleScoreMap = new Map<string, ArticleScoreBreakdown>();
+  articlesToScore.forEach((article, position) => {
+    const score = scores.get(position);
+    if (score) articleScoreMap.set(article.link, score);
+  });
+
   const scoredArticles: RankedArticle[] = recentArticles.map((article, index) => {
-    const score = (articlesToScore === recentArticles)
-      ? (scores.get(index) || { relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc' })
-      : (articleScoreMap.get(article) || { relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc' });
+    const score = articleScoreMap.get(article.link)
+      || (articlesToScore === recentArticles
+        ? scores.get(index)
+        : undefined)
+      || { relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc' };
     return {
       ...article,
       totalScore: score.relevance + score.quality + score.timeliness,
@@ -942,19 +1176,38 @@ async function main(): Promise<void> {
     };
   });
 
-  const { selected: topArticles, skippedByDiversity } = selectDiverseTopArticles(scoredArticles, topN);
-
-  console.log(
-    `[digest] Top ${topN} selected with topic diversity (max 2/topic, skipped ${skippedByDiversity} similar)`
-  );
+  let topArticles: RankedArticle[];
+  if (checkpoint.state.top.length > 0) {
+    topArticles = checkpoint.state.top.map(deserializeRanked);
+    console.log(`[digest] Top ${topArticles.length} restored from checkpoint`);
+  } else {
+    const { selected, skippedByDiversity } = selectDiverseTopArticles(scoredArticles, topN);
+    topArticles = selected;
+    await checkpoint.setTop(topArticles);
+    console.log(
+      `[digest] Top ${topN} selected with topic diversity (max 2/topic, skipped ${skippedByDiversity} similar)`
+    );
+  }
   console.log(
     `[digest] Score range: ${topArticles[topArticles.length - 1]?.totalScore || 0} - ${topArticles[0]?.totalScore || 0}`
   );
-  
-  console.log(`[digest] Step 4/6: Generating AI summaries...`);
-  const indexedTopArticles = topArticles.map((a, i) => ({ ...a, index: i }));
-  const summaries = await summarizeArticles(indexedTopArticles, aiClient, lang, aiConcurrency);
-  
+
+  // --- Stage: summarize ---
+  let summaries: Map<number, { titleZh: string; summary: string; reason: string }>;
+  if (checkpoint.state.summarizeComplete) {
+    summaries = new Map(
+      Object.entries(checkpoint.state.summaries).map(([k, v]) => [Number(k), v])
+    );
+    console.log(`[digest] Step 3/5: Summaries cached (${summaries.size}, skip AI)`);
+  } else {
+    await checkpoint.setStage('summarize');
+    console.log(`[digest] Step 3/5: Generating AI summaries...`);
+    const indexedTopArticles = topArticles.map((a, i) => ({ ...a, index: i }));
+    summaries = await summarizeArticles(
+      indexedTopArticles, aiClient, lang, aiConcurrency, summaryBatch, checkpoint
+    );
+  }
+
   const finalArticles: ScoredArticle[] = topArticles.map((a, i) => {
     const sm = summaries.get(i) || { titleZh: a.title, summary: a.description.slice(0, 200), reason: '' };
     return {
@@ -977,39 +1230,70 @@ async function main(): Promise<void> {
       reason: sm.reason,
     };
   });
-  
-  console.log(`[digest] Step 5/6: Generating today's highlights...`);
-  const highlights = await generateHighlights(finalArticles, aiClient, lang);
 
-  const successfulSources = new Set(allArticles.map(a => a.sourceName));
-  
-  const report = generateDigestReport(finalArticles, highlights, {
-    totalFeeds: rssFeeds.length,
-    successFeeds: successfulSources.size,
-    totalArticles: allArticles.length,
-    filteredArticles: recentArticles.length,
-    hours,
-  });
-  
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, report);
-  
-  console.log(`[digest] 📁 Report written: ${outputPath}`);
+  // --- Stage: highlights ---
+  let highlights: string;
+  if (checkpoint.state.highlightsComplete) {
+    highlights = checkpoint.state.highlights;
+    console.log(`[digest] Step 4/5: Highlights cached (skip AI)`);
+  } else {
+    await checkpoint.setStage('highlights');
+    console.log(`[digest] Step 4/5: Generating today's highlights...`);
+    highlights = await generateHighlights(finalArticles, aiClient, lang);
+    await checkpoint.setHighlights(highlights);
+  }
 
-  console.log(`[digest] Step 6/6: Saving full article clippings (${finalArticles.length} articles)...`);
-  const clippingCount = await saveArticleClippings(finalArticles, clippingsDir, clippingsConcurrency, aiClient);
-  
+  if (!checkpoint.state.reportComplete) {
+    const report = generateDigestReport(finalArticles, highlights, {
+      totalFeeds: rssFeeds.length,
+      successFeeds: successCount,
+      totalArticles: recentArticles.length,
+      filteredArticles: recentArticles.length,
+      hours,
+    });
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, report);
+    await checkpoint.markReportComplete();
+    console.log(`[digest] 📁 Report written: ${outputPath}`);
+  } else {
+    console.log(`[digest] 📁 Report already written (skip)`);
+  }
+
+  // --- Stage: clippings ---
+  if (!checkpoint.state.clippingsComplete) {
+    await checkpoint.setStage('clippings');
+    console.log(`[digest] Step 5/5: Saving full article clippings (${finalArticles.length} articles)...`);
+    const clippingCount = await saveArticleClippings(
+      finalArticles,
+      clippingsDir,
+      clippingsConcurrency,
+      aiClient,
+      {
+        skipLinks: new Set(checkpoint.state.clippingsDoneLinks),
+        onSaved: link => checkpoint.markClippingDone(link),
+        translateBatch: profile.translateBatch,
+        translateConcurrency: profile.translateConcurrency,
+      }
+    );
+    checkpoint.state.clippingsComplete = true;
+    await checkpoint.flush();
+    console.log(`[digest] 📎 Clippings: ${clippingCount}/${finalArticles.length} saved to ${clippingsDir}`);
+  } else {
+    console.log(`[digest] Step 5/5: Clippings already done (skip)`);
+  }
+
+  await checkpoint.markDoneAndClear();
+
   console.log('');
   console.log(`[digest] ✅ Done!`);
   console.log(`[digest] 📁 Report: ${outputPath}`);
-  console.log(`[digest] 📎 Clippings: ${clippingCount}/${finalArticles.length} saved to ${clippingsDir}`);
-  console.log(`[digest] 📊 Stats: ${successfulSources.size} sources → ${allArticles.length} articles → ${recentArticles.length} recent → ${finalArticles.length} selected`);
-  
+  console.log(`[digest] 📊 Stats: ${successCount} feeds with recent → ${recentArticles.length} articles → ${finalArticles.length} selected`);
+
   if (finalArticles.length > 0) {
     console.log('');
     console.log(`[digest] 🏆 Top 10 Preview:`);
     for (let i = 0; i < Math.min(10, finalArticles.length); i++) {
-      const a = finalArticles[i];
+      const a = finalArticles[i]!;
       console.log(`  ${i + 1}. ${a.titleZh || a.title}`);
       console.log(`     ${a.summary.slice(0, 80)}...`);
     }

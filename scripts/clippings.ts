@@ -99,7 +99,11 @@ async function translateBlocks(blocks: string[], aiClient: AIClient): Promise<st
   }
 }
 
-async function addBilingualTranslation(markdown: string, aiClient: AIClient): Promise<string> {
+async function addBilingualTranslation(
+  markdown: string,
+  aiClient: AIClient,
+  options?: { translateBatch?: number; translateConcurrency?: number }
+): Promise<string> {
   const blocks = parseBlocks(markdown);
   const allText = blocks.filter(b => b.type === 'text').map(b => b.content).join('\n');
   if (!allText.trim() || isChinese(allText, 0.35)) return markdown;
@@ -108,15 +112,22 @@ async function addBilingualTranslation(markdown: string, aiClient: AIClient): Pr
   blocks.forEach((block, idx) => { if (block.type === 'text' && shouldTranslate(block.content)) jobs.push({ idx, content: block.content }); });
   if (!jobs.length) return markdown;
 
+  const translateBatch = options?.translateBatch ?? TRANSLATE_BATCH;
+  const translateConcurrency = options?.translateConcurrency ?? 2;
+  const batches: Array<Array<{ idx: number; content: string }>> = [];
+  for (let s = 0; s < jobs.length; s += translateBatch) {
+    batches.push(jobs.slice(s, s + translateBatch));
+  }
+
   const translations = new Map<number, string>();
-  for (let s = 0; s < jobs.length; s += TRANSLATE_BATCH) {
-    const batch = jobs.slice(s, s + TRANSLATE_BATCH);
+  await runWithConcurrency(batches.length, translateConcurrency, async (batchIndex) => {
+    const batch = batches[batchIndex]!;
     const translated = await translateBlocks(batch.map(j => j.content), aiClient);
     batch.forEach((job, i) => {
       const text = translated[i]?.trim();
       if (text && text !== job.content.trim()) translations.set(job.idx, text);
     });
-  }
+  });
 
   return blocks.flatMap((block, idx) => {
     const zh = translations.get(idx);
@@ -167,19 +178,32 @@ export async function saveArticleClippings(
   articles: ScoredArticle[],
   clippingsDir: string,
   concurrency: number,
-  aiClient: AIClient
+  aiClient: AIClient,
+  options?: {
+    skipLinks?: Set<string>;
+    onSaved?: (link: string) => Promise<void>;
+    translateBatch?: number;
+    translateConcurrency?: number;
+  }
 ): Promise<number> {
   await mkdir(clippingsDir, { recursive: true });
   const datePrefix = formatDateCompact();
   const used = new Set<string>();
-  const tasks = articles.map(article => {
-    let name = `${datePrefix}-${sanitizeFilename(article.title)}.md`;
-    for (let n = 2; used.has(name); n++) name = `${datePrefix}-${sanitizeFilename(article.title)}-${n}.md`;
-    used.add(name);
-    return { article, name };
-  });
+  const skipLinks = options?.skipLinks || new Set<string>();
+  const tasks = articles
+    .filter(article => !skipLinks.has(article.link))
+    .map(article => {
+      let name = `${datePrefix}-${sanitizeFilename(article.title)}.md`;
+      for (let n = 2; used.has(name); n++) name = `${datePrefix}-${sanitizeFilename(article.title)}-${n}.md`;
+      used.add(name);
+      return { article, name };
+    });
 
-  let saved = 0;
+  if (skipLinks.size > 0) {
+    console.log(`[digest] Clippings resume: skip ${skipLinks.size}, remaining ${tasks.length}`);
+  }
+
+  let saved = skipLinks.size;
   await runWithConcurrency(tasks.length, concurrency, async (index) => {
     const { article, name } = tasks[index]!;
     const raw = await fetchArticleMarkdown(article.link);
@@ -187,8 +211,13 @@ export async function saveArticleClippings(
       console.warn(`[digest] ✗ Clipping failed: ${article.title}`);
       return;
     }
-    await writeFile(`${clippingsDir}/${name}`, buildClippingMarkdown(article, await addBilingualTranslation(raw, aiClient)), 'utf8');
+    const bilingual = await addBilingualTranslation(raw, aiClient, {
+      translateBatch: options?.translateBatch,
+      translateConcurrency: options?.translateConcurrency,
+    });
+    await writeFile(`${clippingsDir}/${name}`, buildClippingMarkdown(article, bilingual), 'utf8');
     saved++;
+    if (options?.onSaved) await options.onSaved(article.link);
     console.log(`[digest] ✓ Clipping saved: ${name}`);
   });
   return saved;
