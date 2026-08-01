@@ -24,7 +24,7 @@ const OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1';
 const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini';
 const FEED_FETCH_TIMEOUT_MS = 15_000;
 const DEFAULT_FEED_CONCURRENCY = 50;
-const GEMINI_BATCH_SIZE = 15;
+const GEMINI_BATCH_SIZE = 2;
 const DEFAULT_AI_CONCURRENCY = 6;
 const DEFAULT_CLIPPINGS_CONCURRENCY = 2;
 const DEFAULT_CLIPPINGS_DIR = '/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings';
@@ -382,42 +382,56 @@ async function callOpenAICompatible(
   model: string
 ): Promise<string> {
   const normalizedBase = apiBase.replace(/\/+$/, '');
-  const response = await fetch(`${normalizedBase}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      top_p: 0.8,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 300_000); // 300 second timeout (5 min for large batches on local GPU)
+  
+  try {
+    const response = await fetch(`${normalizedBase}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        top_p: 0.8,
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`OpenAI-compatible API error (${response.status}): ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`OpenAI-compatible API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json() as {
+      choices?: Array<{
+        message?: {
+          content?: string | Array<{ type?: string; text?: string }>;
+          reasoning_content?: string;
+        };
+      }>;
+    };
+
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content === 'string' && content.length > 0) return content;
+    if (Array.isArray(content)) {
+      const text = content
+        .filter(item => item.type === 'text' && typeof item.text === 'string')
+        .map(item => item.text)
+        .join('\n');
+      if (text.length > 0) return text;
+    }
+    // Fallback: some reasoning models put output in reasoning_content
+    const reasoning = data.choices?.[0]?.message?.reasoning_content;
+    if (typeof reasoning === 'string' && reasoning.length > 0) return reasoning;
+    return '';
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = await response.json() as {
-    choices?: Array<{
-      message?: {
-        content?: string | Array<{ type?: string; text?: string }>;
-      };
-    }>;
-  };
-
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter(item => item.type === 'text' && typeof item.text === 'string')
-      .map(item => item.text)
-      .join('\n');
-  }
-  return '';
 }
 
 function inferOpenAIModel(apiBase: string): string {
@@ -880,13 +894,47 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   
-  console.log(`[digest] Step 3/6: AI scoring ${recentArticles.length} articles...`);
-  const scores = await scoreArticlesWithAI(recentArticles, aiClient, aiConcurrency);
+  // Pre-filter for local LLM: reduce candidates to ~2x top-N using keyword heuristics
+  const isLocalLLM = openaiApiBase?.includes('127.0.0.1') || openaiApiBase?.includes('localhost');
+  let articlesToScore = recentArticles;
+  if (isLocalLLM && recentArticles.length > topN * 2) {
+    console.log(`[digest] Pre-filtering ${recentArticles.length} articles for local LLM (target: ~${topN * 2})...`);
+    const techKeywords = /\b(ai|llm|gpt|claude|gemini|machine learning|deep learning|neural|transformer|diffusion|agent|rag|embedding|vector|python|rust|golang|typescript|javascript|kubernetes|docker|linux|security|vulnerability|exploit|database|postgres|redis|api|grpc|websocket|performance|optimization|scalability|distributed|blockchain|crypto|web3|devops|ci\/cd|git|open source|oss|framework|library|sdk|cli|gui|ui\/ux|frontend|backend|fullstack|cloud|aws|azure|gcp|serverless|microservice|architecture|algorithm|data structure|compiler|interpreter|browser|web|mobile|ios|android)\b/i;
+    
+    const scored = recentArticles.map((article, idx) => {
+      let score = 0;
+      const text = `${article.title} ${article.description}`.toLowerCase();
+      if (techKeywords.test(text)) score += 3;
+      if (article.title.length > 20) score += 1;
+      if (article.description.length > 100) score += 1;
+      if (/\b(new|release|launch|announce|update|fix|bug|vulnerability|breakthrough|introducing)\b/i.test(article.title)) score += 2;
+      return { idx, score };
+    });
+    
+    scored.sort((a, b) => b.score - a.score);
+    const preFilterCount = Math.min(topN * 2, recentArticles.length);
+    const selectedIndices = new Set(scored.slice(0, preFilterCount).map(s => s.idx));
+    articlesToScore = recentArticles.filter((_, idx) => selectedIndices.has(idx));
+    console.log(`[digest] Pre-filtered to ${articlesToScore.length} candidates for AI scoring`);
+  }
+  
+  console.log(`[digest] Step 3/6: AI scoring ${articlesToScore.length} articles...`);
+  const scores = await scoreArticlesWithAI(articlesToScore, aiClient, aiConcurrency);
+  
+  // Build a lookup: article object -> score (using object identity)
+  const articleScoreMap = new Map<object, ArticleScoreBreakdown>();
+  if (articlesToScore !== recentArticles) {
+    // Pre-filtered: scores are indexed 0..N relative to articlesToScore
+    articlesToScore.forEach((article, position) => {
+      const score = scores.get(position);
+      if (score) articleScoreMap.set(article, score);
+    });
+  }
   
   const scoredArticles: RankedArticle[] = recentArticles.map((article, index) => {
-    const score = scores.get(index) || {
-      relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc',
-    };
+    const score = (articlesToScore === recentArticles)
+      ? (scores.get(index) || { relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc' })
+      : (articleScoreMap.get(article) || { relevance: 5, quality: 5, timeliness: 5, category: 'other' as CategoryId, keywords: [], topic: 'misc' });
     return {
       ...article,
       totalScore: score.relevance + score.quality + score.timeliness,
@@ -933,9 +981,6 @@ async function main(): Promise<void> {
   console.log(`[digest] Step 5/6: Generating today's highlights...`);
   const highlights = await generateHighlights(finalArticles, aiClient, lang);
 
-  console.log(`[digest] Step 6/6: Saving full article clippings (${finalArticles.length} articles)...`);
-  const clippingCount = await saveArticleClippings(finalArticles, clippingsDir, clippingsConcurrency, aiClient);
-  
   const successfulSources = new Set(allArticles.map(a => a.sourceName));
   
   const report = generateDigestReport(finalArticles, highlights, {
@@ -948,6 +993,11 @@ async function main(): Promise<void> {
   
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, report);
+  
+  console.log(`[digest] 📁 Report written: ${outputPath}`);
+
+  console.log(`[digest] Step 6/6: Saving full article clippings (${finalArticles.length} articles)...`);
+  const clippingCount = await saveArticleClippings(finalArticles, clippingsDir, clippingsConcurrency, aiClient);
   
   console.log('');
   console.log(`[digest] ✅ Done!`);
