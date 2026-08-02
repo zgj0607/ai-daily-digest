@@ -20,8 +20,20 @@ function formatDateCompact(date = new Date()): string {
   return `${y}${m}${d}`;
 }
 
+/** Android / FAT / MediaStore 友好的文件名：去掉冒号、竖线等，并压缩空白 */
 function sanitizeFilename(title: string): string {
-  return title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'untitled';
+  const cleaned = title
+    .normalize('NFKC') // 全角 ：｜ 等转为半角后再剔除
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\ufeff]/g, '') // 控制符 / 零宽字符
+    .replace(/[<>:"/\\|?*#%{}$!`'=+@&;]/g, '') // Windows/Android 非法与易出问题字符
+    .replace(/[\uFF1A\uFF5C\uFF0F\uFE63\uFE31\uFE32]/g, '') // 残留全角冒号、竖线、斜线等
+    .replace(/[.．。]+$/g, '') // 后缀前勿以点结尾（Android 易出问题）
+    .replace(/[\s\u3000]+/g, ' ') // 含全角空格，压成单个半角空格
+    .trim()
+    .replace(/[.．\s]+$/g, '') // 再清一次尾部点/空白，避免 `.md` 前多空格
+    .slice(0, 120)
+    .trim();
+  return cleaned || 'untitled';
 }
 
 function parseBlocks(markdown: string): Block[] {
@@ -193,8 +205,9 @@ export async function saveArticleClippings(
   const tasks = articles
     .filter(article => !skipLinks.has(article.link))
     .map(article => {
-      let name = `${datePrefix}-${sanitizeFilename(article.title)}.md`;
-      for (let n = 2; used.has(name); n++) name = `${datePrefix}-${sanitizeFilename(article.title)}-${n}.md`;
+      const base = sanitizeFilename(article.titleZh || article.title);
+      let name = `${datePrefix}-${base}.md`;
+      for (let n = 2; used.has(name); n++) name = `${datePrefix}-${base}-${n}.md`;
       used.add(name);
       return { article, name };
     });
