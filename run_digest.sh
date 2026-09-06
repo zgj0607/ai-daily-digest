@@ -4,7 +4,8 @@
 # 每日早上7点自动运行，保存到 Obsidian 并通过 Hermes 发送到飞书
 # 使用本地 litellm + Ubuntu 千问3.6-27b 模型
 #
-# 流程：先爬取 RSS（不启 GPU）→ digest 进入评分前再唤醒 Ubuntu/LLM → 完成后关机
+# 流程：先爬取 RSS（不启 GPU）→ digest 进入评分前再唤醒 Ubuntu/LLM
+#      → digest 一结束立刻关 Ubuntu → 再发飞书（飞书超时不再拖住关机）
 
 set -euo pipefail
 
@@ -58,8 +59,13 @@ DATE=$(date +%Y%m%d)
 OUTPUT_FILE="/tmp/${DATE}-RSS简报.md"
 OBSIDIAN_PATH="/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings/${DATE}-RSS简报.md"
 
+GPU_CLEANED=0
 cleanup_gpu() {
-    echo "[digest] 任务结束，正在关闭 Ubuntu / GPU..."
+    if [ "$GPU_CLEANED" -eq 1 ]; then
+        return 0
+    fi
+    GPU_CLEANED=1
+    echo "[digest] digest 已结束，正在关闭 Ubuntu / GPU（不等待飞书发送）..."
     cd "$PIPELINE_DIR"
     python3 skill/scripts/py/call_mac_api.py /gpu/down --method POST > /dev/null 2>&1 || true
     python3 skill/scripts/py/call_mac_api.py /gpu/pc/off --method POST > /dev/null 2>&1 || true
@@ -71,14 +77,21 @@ cleanup_gpu() {
         echo "[digest] 警告: Ubuntu 可能未完全关机"
     fi
 }
+# digest 中途异常退出时仍关机；正常路径会在 digest 后立刻调用并置幂等标记
 trap cleanup_gpu EXIT
 
 # 生成日报：Step1-2 爬取无需 LLM；Step3 起由 DIGEST_ENSURE_LLM_CMD 按需启动
 echo "[digest] 开始生成 AI 日报（爬取阶段不启动本地大模型）..."
 # 本地 4090/Qwen 参数由 digest.ts 根据 OPENAI_API_BASE 自动选用（并发3 / 评分批10 / 摘要批6）
+set +e
 npx -y bun run scripts/digest.ts --hours 24 --top-n 30 --lang zh --output "$OUTPUT_FILE"
+DIGEST_STATUS=$?
+set -e
 
-# 如果生成成功，复制到Obsidian并发送到飞书
+# 飞书发送经常超时；关机必须紧跟 digest，不能挂在 EXIT 上拖到飞书之后
+cleanup_gpu
+
+# 如果生成成功，复制到Obsidian并发送到飞书（失败/超时不影响 Ubuntu 已关机）
 if [ -f "$OUTPUT_FILE" ]; then
     # 复制到Obsidian知识库
     mv "$OUTPUT_FILE" "$OBSIDIAN_PATH"
@@ -94,14 +107,37 @@ if [ -f "$OUTPUT_FILE" ]; then
     )
 
     HERMES_FEISHU_TARGET="${HERMES_FEISHU_TARGET:-feishu:ou_xxx}"
-    hermes send \
-        --to "$HERMES_FEISHU_TARGET" \
-        "${content}
+    HERMES_SEND_TIMEOUT_SEC="${HERMES_SEND_TIMEOUT_SEC:-90}"
+    echo "[digest] 发送飞书（超时 ${HERMES_SEND_TIMEOUT_SEC}s）..."
+    set +e
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$HERMES_SEND_TIMEOUT_SEC" hermes send \
+            --to "$HERMES_FEISHU_TARGET" \
+            "${content}
 
 ...
 
 *完整报告已保存到 Obsidian: Clippings/${DATE}-RSS简报.md*" \
-        -q 2>&1
+            -q 2>&1
+        HERMES_STATUS=$?
+    else
+        hermes send \
+            --to "$HERMES_FEISHU_TARGET" \
+            "${content}
+
+...
+
+*完整报告已保存到 Obsidian: Clippings/${DATE}-RSS简报.md*" \
+            -q 2>&1
+        HERMES_STATUS=$?
+    fi
+    set -e
+    if [ "$HERMES_STATUS" -ne 0 ]; then
+        echo "[digest] 警告: 飞书发送失败或超时 (exit=$HERMES_STATUS)，报告已在 Obsidian"
+    fi
+elif [ "$DIGEST_STATUS" -ne 0 ]; then
+    echo "[digest] 警告: digest 失败 (exit=$DIGEST_STATUS)，跳过飞书发送"
 fi
 
 echo "[digest] 所有任务完成"
+exit "$DIGEST_STATUS"
