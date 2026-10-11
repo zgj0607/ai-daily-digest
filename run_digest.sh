@@ -2,7 +2,8 @@
 # AI Daily Digest：爬取 → 按需启 Ubuntu/LLM → 生成日报 → 关机 → 发飞书
 set -euo pipefail
 
-[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc"
+# .zshrc removed: causes unbound variable errors under set -euo pipefail
+# Environment is set up explicitly below instead
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
 PIPELINE_DIR="${PIPELINE_DIR:-$HOME/Documents/PycharmProject/Video-Article-Generator}"
