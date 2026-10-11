@@ -136,7 +136,7 @@ if [ -f "$OUTPUT_FILE" ]; then
     sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$OBSIDIAN_PATH" \
     | head -c 3500
   )
-  target="${HERMES_FEISHU_TARGET:-feishu:ou_xxx}"
+  target="${HERMES_FEISHU_TARGET}"
   echo "[digest] 发送飞书..."
   set +e
   if command -v timeout >/dev/null 2>&1; then
