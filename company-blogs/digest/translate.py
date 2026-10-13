@@ -53,6 +53,10 @@ class Translator:
         call, batch, concurrency = _build_client()
         return cls(call, batch, concurrency)
 
+    def complete(self, prompt: str) -> str:
+        """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
+        return self._call(prompt)
+
     def add_bilingual(self, markdown: str) -> str:
         blocks = _parse_blocks(markdown)
         all_text = "\n".join(block.content for block in blocks if block.type == "text")

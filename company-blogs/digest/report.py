@@ -26,6 +26,10 @@ class SavedArticle:
     published: str
     description: str
     filepath: Path
+    problem: str = ""
+    method: str = ""
+    validation: str = ""
+    experiment: str = ""
 
 
 def write_blog_report(
@@ -34,10 +38,13 @@ def write_blog_report(
     articles: list[SavedArticle],
     *,
     source_total: int,
+    highlights: str = "",
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        generate_blog_report(items, articles, source_total=source_total),
+        generate_blog_report(
+            items, articles, source_total=source_total, highlights=highlights
+        ),
         encoding="utf-8",
     )
     return path
@@ -48,6 +55,7 @@ def generate_blog_report(
     articles: list[SavedArticle],
     *,
     source_total: int,
+    highlights: str = "",
 ) -> str:
     today = date.today()
     date_str = today.isoformat()
@@ -66,30 +74,25 @@ def generate_blog_report(
         f"# 📰 AI 公司博客简报 — {date_str}",
         "",
         f"> 扫描 {source_total} 家 AI 公司博客，本次新收录 **{saved}** 篇"
-        + (f"（失败 {failed} 篇）" if failed else ""),
+        + (f"（失败 {failed} 篇）" if failed else "")
+        + "；按「问题 / 方法 / 验证 / 智能客服小实验」四维提炼",
         "",
     ]
+
+    if highlights.strip():
+        lines.append("## 📝 行业迁移启示")
+        lines.append("")
+        lines.append(highlights.strip())
+        lines.append("")
+        lines.append("---")
+        lines.append("")
 
     if sorted_articles:
         lines.append("## 🏆 本次新文")
         lines.append("")
         for index, article in enumerate(sorted_articles[:10]):
             medal = ["🥇", "🥈", "🥉"][index] if index < 3 else f"{index + 1}."
-            when = _humanize_published(article.published)
-            lines.append(f"{medal} **{article.title}**")
-            lines.append("")
-            meta = f"[{article.title}]({article.url}) — {article.source_name}"
-            if when:
-                meta += f" · {when}"
-            lines.append(meta)
-            if article.description:
-                lines.append("")
-                lines.append(f"> {article.description}")
-            note_rel = _rel_from_report(article.filepath)
-            if note_rel:
-                lines.append("")
-                lines.append(f"📎 [Obsidian 笔记]({note_rel})")
-            lines.append("")
+            lines.extend(_article_block(article, medal, heading_level=0))
         lines.append("---")
         lines.append("")
     else:
@@ -144,21 +147,7 @@ def generate_blog_report(
             lines.append("")
             for article in group:
                 index += 1
-                when = _humanize_published(article.published)
-                lines.append(f"### {index}. {article.title}")
-                lines.append("")
-                meta = f"[{article.title}]({article.url}) — **{article.source_name}**"
-                if when:
-                    meta += f" · {when}"
-                lines.append(meta)
-                if article.description:
-                    lines.append("")
-                    lines.append(f"> {article.description}")
-                note_rel = _rel_from_report(article.filepath)
-                if note_rel:
-                    lines.append("")
-                    lines.append(f"📎 [Obsidian 笔记]({note_rel})")
-                lines.append("")
+                lines.extend(_article_block(article, f"### {index}.", heading_level=3))
                 lines.append("---")
                 lines.append("")
 
@@ -166,8 +155,50 @@ def generate_blog_report(
     lines.append(
         f"*生成于 {date_str} {now} | 扫描 {ok_sources}/{source_total} 源 → 新收录 {saved} 篇*"
     )
+    lines.append(
+        "*提炼视角：具体问题 → 方法与理由 → 验证与数据条件 → "
+        "智能客服（呼入/外呼/文本）在生活服务·金融·保险·支付的小实验*"
+    )
     lines.append("")
     return "\n".join(lines)
+
+
+def _article_block(article: SavedArticle, lead: str, *, heading_level: int) -> list[str]:
+    when = _humanize_published(article.published)
+    lines: list[str] = []
+    if heading_level == 3:
+        lines.append(f"{lead} {article.title}")
+        lines.append("")
+    else:
+        lines.append(f"{lead} **{article.title}**")
+        lines.append("")
+
+    meta = f"[{article.title}]({article.url}) — "
+    meta += f"**{article.source_name}**" if heading_level == 3 else article.source_name
+    if when:
+        meta += f" · {when}"
+    lines.append(meta)
+
+    if article.problem or article.method or article.validation or article.experiment:
+        lines.append("")
+        if article.problem:
+            lines.append(f"- **面对的问题**：{article.problem}")
+        if article.method:
+            lines.append(f"- **方法与理由**：{article.method}")
+        if article.validation:
+            lines.append(f"- **验证与条件**：{article.validation}")
+        if article.experiment:
+            lines.append(f"- **客服小实验**：{article.experiment}")
+    elif article.description:
+        lines.append("")
+        lines.append(f"> {article.description}")
+
+    note_rel = _rel_from_report(article.filepath)
+    if note_rel:
+        lines.append("")
+        lines.append(f"📎 [Obsidian 笔记]({note_rel})")
+    lines.append("")
+    return lines
 
 
 def excerpt_from_body(body: str, description: str = "", limit: int = 280) -> str:

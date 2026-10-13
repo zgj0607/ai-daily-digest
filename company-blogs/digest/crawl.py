@@ -12,6 +12,7 @@ from digest.config import Settings, Source
 from digest.content import extract_article, localize_images, write_markdown
 from digest.dates import parse_date, to_iso
 from digest.http import Fetcher
+from digest.insight import enrich_insights
 from digest.report import SavedArticle, SourceReport, excerpt_from_body, write_blog_report
 from digest.state import ArticleRow, State
 from digest.translate import Translator, configure_llm_concurrency
@@ -105,8 +106,21 @@ def run(
             print(f"{item.name}: 发现 {item.discovered}，本次保存 {item.saved}，失败 {item.failed}")
     print(f"合计: 保存 {saved}，失败 {failed}")
 
+    highlights = ""
+    if saved_articles:
+        # 简报提炼仍用本地模型（与翻译同一套 LLM），需在关机前完成
+        highlights = enrich_insights(
+            saved_articles, translator, concurrency=settings.llm_concurrency
+        )
+
     report_path = settings.output_dir / f"{date.today().strftime('%Y%m%d')}-公司博客简报.md"
-    write_blog_report(report_path, items, saved_articles, source_total=len(sources))
+    write_blog_report(
+        report_path,
+        items,
+        saved_articles,
+        source_total=len(sources),
+        highlights=highlights,
+    )
     print(f"[digest] 博客简报已写入 {report_path}")
     if summary_path is not None and summary_path.resolve() != report_path.resolve():
         summary_path.parent.mkdir(parents=True, exist_ok=True)
