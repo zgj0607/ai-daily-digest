@@ -1,5 +1,8 @@
 generated_imgs/
 node_modules/
+company-blogs/.venv/
+company-blogs/state/
+company-blogs/.env
 .cache/
 *.log
 .DS_Store

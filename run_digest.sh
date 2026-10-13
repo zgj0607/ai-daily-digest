@@ -126,9 +126,39 @@ npx -y bun run scripts/digest.ts --hours 24 --top-n 30 --lang zh --output "$OUTP
 DIGEST_STATUS=$?
 set -e
 
-# digest 一结束立刻关机，不因飞书超时拖住 Ubuntu
+# 本地模型仍在运行，接着抓 AI 公司博客并翻译，完成后再关机（使用本机全局 python3）
+BLOG_OBSIDIAN_DIR="/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs"
+BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-公司博客简报.md"
+echo "[digest] 开始抓取 AI 公司博客..."
+set +e
+(cd "$DIGEST_DIR/company-blogs" && python3 -m digest run --summary "$BLOG_SUMMARY")
+BLOG_STATUS=$?
+set -e
+if [ "$BLOG_STATUS" -ne 0 ]; then
+  echo "[digest] 警告: 公司博客抓取失败 (exit=$BLOG_STATUS)"
+fi
+
+# digest 与博客都结束后再关机，不因飞书超时拖住 Ubuntu
 cleanup
 trap - EXIT
+
+send_feishu() {
+  local body="$1"
+  local target="${HERMES_FEISHU_TARGET}"
+  if [ -z "$target" ]; then
+    echo "[digest] 警告: 未设置 HERMES_FEISHU_TARGET，跳过飞书"
+    return 0
+  fi
+  set +e
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${HERMES_SEND_TIMEOUT_SEC:-90}" hermes send --to "$target" "$body" -q
+  else
+    hermes send --to "$target" "$body" -q
+  fi
+  local status=$?
+  set -e
+  return "$status"
+}
 
 if [ -f "$OUTPUT_FILE" ]; then
   mv "$OUTPUT_FILE" "$OBSIDIAN_PATH"
@@ -136,28 +166,33 @@ if [ -f "$OUTPUT_FILE" ]; then
     sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$OBSIDIAN_PATH" \
     | head -c 3500
   )
-  target="${HERMES_FEISHU_TARGET}"
-  echo "[digest] 发送飞书..."
-  set +e
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "${HERMES_SEND_TIMEOUT_SEC:-90}" hermes send --to "$target" \
-      "${content}
+  echo "[digest] 发送飞书（RSS 简报）..."
+  if ! send_feishu "${content}
 
 ...
 
-*完整报告已保存到 Obsidian: Clippings/${DATE}-RSS简报.md*" -q
-  else
-    hermes send --to "$target" \
-      "${content}
-
-...
-
-*完整报告已保存到 Obsidian: Clippings/${DATE}-RSS简报.md*" -q
+*完整报告已保存到 Obsidian: Clippings/${DATE}-RSS简报.md*"; then
+    echo "[digest] 警告: RSS 飞书发送失败或超时（报告已在 Obsidian）"
   fi
-  [ $? -ne 0 ] && echo "[digest] 警告: 飞书发送失败或超时（报告已在 Obsidian）"
-  set -e
 elif [ "$DIGEST_STATUS" -ne 0 ]; then
   echo "[digest] 警告: digest 失败 (exit=$DIGEST_STATUS)"
+fi
+
+if [ -f "$BLOG_SUMMARY" ]; then
+  blog_content=$(
+    sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$BLOG_SUMMARY" \
+    | head -c 3500
+  )
+  echo "[digest] 发送飞书（公司博客简报）..."
+  if ! send_feishu "${blog_content}
+
+...
+
+*完整简报已保存到 Obsidian: ai-company-blogs/${DATE}-AI公司博客简报.md*"; then
+    echo "[digest] 警告: 公司博客飞书发送失败或超时（简报已在 Obsidian）"
+  fi
+elif [ "$BLOG_STATUS" -ne 0 ]; then
+  echo "[digest] 警告: 公司博客无简报可发送"
 fi
 
 echo "[digest] 所有任务完成"

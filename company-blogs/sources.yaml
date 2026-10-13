@@ -1,0 +1,88 @@
+output_dir: /Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs
+assets_dir: /Users/zhou/Documents/PycharmProject/my-kb/raw/assets
+state_db: state/crawl.sqlite
+request_interval_seconds: 0.3
+user_agent: ai-company-blog-digest/0.1
+max_attempts: 3
+# 并行（对齐本地 4090 / vLLM：少并发 + 多任务吞吐）
+source_concurrency: 3
+article_concurrency: 3
+llm_concurrency: 3
+
+sources:
+  - id: decagon
+    name: Decagon
+    enabled: true
+    index_url: https://decagon.ai/resources/blog
+    sitemap_url: https://decagon.ai/sitemap.xml
+    include: '^https://decagon.ai/blog/[^/]+$'
+
+  - id: sierra
+    name: Sierra
+    enabled: true
+    index_url: https://sierra.ai/blog
+    sitemap_url: https://sierra.ai/sitemap-en-us.xml
+    include: '^https://sierra.ai/blog/[^/]+$'
+
+  - id: cresta
+    name: Cresta
+    enabled: true
+    index_url: https://cresta.com/blog
+    sitemap_url: https://cresta.com/sitemap.xml
+    include: '^https://cresta.com/blog/[^/]+$'
+
+  - id: anthropic
+    name: Anthropic
+    enabled: true
+    index_url: https://www.anthropic.com/engineering
+    sitemap_url: https://www.anthropic.com/sitemap.xml
+    include: '^https://www.anthropic.com/engineering/[^/]+$'
+
+  - id: huggingface
+    name: Hugging Face
+    enabled: true
+    index_url: https://huggingface.co/blog
+    feed_url: https://huggingface.co/blog/feed.xml
+    sitemap_url: https://huggingface.co/sitemap-blog.xml
+    include: '^https://huggingface.co/blog/.+'
+
+  - id: aisera
+    name: Aisera
+    enabled: true
+    index_url: https://aisera.com/blog/
+    sitemap_url: https://aisera.com/post-sitemap.xml
+    include: '^https://aisera.com/blog/[^/]+$'
+
+  - id: intercom
+    name: Intercom
+    enabled: true
+    index_url: https://www.intercom.com/blog
+    feed_url: https://www.intercom.com/blog/feed
+    sitemap_url: https://www.intercom.com/sitemap-blog.xml
+    include: '^https://www.intercom.com/blog/[^/]+$'
+    exclude:
+      - '^https://www.intercom.com/blog/(podcasts|videos)$'
+
+  - id: yellow
+    name: Yellow.ai
+    enabled: true
+    index_url: https://yellow.ai/blog/
+    feed_url: https://yellow.ai/blog/feed/
+    sitemap_url: https://yellow.ai/blog-sitemap.xml
+    include: '^https://yellow.ai/blog/[^/]+$'
+
+  - id: cognigy
+    name: Cognigy
+    enabled: true
+    index_url: https://www.cognigy.com/blog
+    sitemap_url: https://www.cognigy.com/sitemap.xml
+    include: '^https://www.cognigy.com/blog/[^/]+$'
+    exclude:
+      - '^https://www.cognigy.com/blog/(tag|page)(/|$)'
+
+  - id: glean
+    name: Glean
+    enabled: true
+    index_url: https://www.glean.com/blog
+    sitemap_url: https://www.glean.com/sitemap.xml
+    include: '^https://www.glean.com/blog/[^/]+$'
