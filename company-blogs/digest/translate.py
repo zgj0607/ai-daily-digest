@@ -4,7 +4,6 @@ import json
 import os
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,9 +83,8 @@ class Translator:
                     missing += 1
             return found, missing
 
-        workers = min(self.translate_concurrency, len(batches))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(worker, batches))
+        # 外层已有翻译线程 + 全局 llm 信号量，批次串行避免线程扇出
+        results = [worker(batch) for batch in batches]
 
         translations: dict[int, str] = {}
         failed = 0

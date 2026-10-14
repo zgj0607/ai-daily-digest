@@ -91,10 +91,10 @@ def run(
         translate_pool.submit(translate_loop)
 
     try:
-        # 先把历史未译完的笔记丢进翻译队列，与本次爬取重叠进行
-        backlog = state.needs_translate()
+        # 先续译历史未完成笔记（有上限，避免拖垮本次关机窗口）
+        backlog = state.needs_translate(limit=50)
         if backlog:
-            print(f"[digest] 续译未完成 {len(backlog)} 篇")
+            print(f"[digest] 续译未完成 {len(backlog)} 篇（最多 50）")
             for row in backlog:
                 source = source_by_id.get(row.source_id)
                 name = source.name if source else row.source_id
@@ -181,7 +181,7 @@ def run(
             this_run, translator, concurrency=settings.llm_concurrency
         )
 
-    report_path = settings.output_dir / f"{date.today().strftime('%Y%m%d')}-公司博客简报.md"
+    report_path = settings.output_dir / f"{date.today().strftime('%Y%m%d')}-AI公司博客简报.md"
     write_blog_report(
         report_path,
         items,

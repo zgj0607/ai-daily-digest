@@ -7,33 +7,57 @@ import requests
 
 
 class Fetcher:
+    """全局限速 + 每线程独立 Session（避免共享 Session 的线程安全问题）。"""
+
     def __init__(self, user_agent: str, interval_seconds: float) -> None:
         self.interval_seconds = interval_seconds
-        self._last_request = 0.0
-        self._lock = threading.Lock()
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": user_agent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            }
-        )
+        self.user_agent = user_agent
         self.timeout = (15, 40)
+        self._last_request = 0.0
+        self._rate_lock = threading.Lock()
+        self._local = threading.local()
+        self._sessions: list[requests.Session] = []
+        self._sessions_lock = threading.Lock()
 
     def close(self) -> None:
-        self.session.close()
+        with self._sessions_lock:
+            for session in self._sessions:
+                session.close()
+            self._sessions.clear()
+
+    def _session(self) -> requests.Session:
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.headers.update(
+                {
+                    "User-Agent": self.user_agent,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                }
+            )
+            self._local.session = session
+            with self._sessions_lock:
+                self._sessions.append(session)
+        return session
+
+    def _rate_limit(self) -> None:
+        """只在限速时持锁；网络 IO 在锁外进行。"""
+        with self._rate_lock:
+            elapsed = time.monotonic() - self._last_request
+            if self._last_request and elapsed < self.interval_seconds:
+                time.sleep(self.interval_seconds - elapsed)
+            self._last_request = time.monotonic()
 
     def get(self, url: str) -> requests.Response:
         last_error: Exception | None = None
         for attempt in range(3):
-            with self._lock:
-                self._pause_unlocked()
-                try:
-                    response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
-                except requests.RequestException as exc:
-                    last_error = exc
-                    time.sleep(2 ** attempt)
-                    continue
+            self._rate_limit()
+            try:
+                response = self._session().get(url, timeout=self.timeout, allow_redirects=True)
+            except requests.RequestException as exc:
+                last_error = exc
+                time.sleep(2 ** attempt)
+                continue
             if response.status_code in {429, 500, 502, 503, 504}:
                 last_error = RuntimeError(f"HTTP {response.status_code}")
                 time.sleep(2 ** attempt)
@@ -54,9 +78,3 @@ class Fetcher:
 
     def bytes(self, url: str) -> bytes:
         return self.get(url).content
-
-    def _pause_unlocked(self) -> None:
-        elapsed = time.monotonic() - self._last_request
-        if self._last_request and elapsed < self.interval_seconds:
-            time.sleep(self.interval_seconds - elapsed)
-        self._last_request = time.monotonic()
