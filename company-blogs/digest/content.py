@@ -1,9 +1,8 @@
-"""正文抽取、图片本地化、Obsidian Markdown 写入。"""
+"""正文抽取、图片 URL 规范化、Obsidian Markdown 写入。"""
 from __future__ import annotations
 
 import hashlib
 import json
-import mimetypes
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -16,11 +15,6 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify
 
 from digest.dates import date_only, file_stamp, parse_date
-from digest.http import Fetcher
-
-# ---------------------------------------------------------------------------
-# Extract
-# ---------------------------------------------------------------------------
 
 _SITE_SUFFIX = re.compile(
     r"\s+(?:\||\\|[-–—])\s+(?:Hugging Face|Decagon|Sierra|Cresta|Anthropic|"
@@ -267,94 +261,41 @@ def _clean_body(body: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
-# ---------------------------------------------------------------------------
-# Assets
-# ---------------------------------------------------------------------------
-
+# 图片：保留博客原始地址（相对路径转绝对 URL，不下载）
 _MD_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
-_HTML_IMAGE = re.compile(r'<img\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>', re.IGNORECASE)
+_HTML_IMAGE = re.compile(r'(<img\b[^>]*\bsrc=["\'])([^"\']+)(["\'][^>]*>)', re.IGNORECASE)
 _SKIP_SCHEMES = ("data:", "blob:", "javascript:", "mailto:")
-_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".avif", ".bmp"}
 
 
-def localize_images(
-    body: str,
-    page_url: str,
-    assets_dir: Path,
-    fetcher: Fetcher,
-    company_id: str,
-) -> str:
-    folder = assets_dir / "ai-company-blogs" / company_id
-    folder.mkdir(parents=True, exist_ok=True)
-    cache: dict[str, str] = {}
+def absolutize_images(body: str, page_url: str) -> str:
+    """将 Markdown/HTML 中的相对图片地址解析为博客原始绝对 URL，不下载。"""
 
     def replace_md(match: re.Match[str]) -> str:
         alt, raw_url = match.group(1), match.group(2).strip()
-        local = _ensure_local(raw_url, page_url, folder, fetcher, cache)
-        return f"![{alt}]({local})" if local else match.group(0)
+        absolute = _absolute_image_url(raw_url, page_url)
+        return f"![{alt}]({absolute})" if absolute else match.group(0)
 
     def replace_html(match: re.Match[str]) -> str:
-        raw_url = match.group(1).strip()
-        local = _ensure_local(raw_url, page_url, folder, fetcher, cache)
-        return match.group(0).replace(raw_url, local, 1) if local else match.group(0)
+        prefix, raw_url, suffix = match.group(1), match.group(2).strip(), match.group(3)
+        absolute = _absolute_image_url(raw_url, page_url)
+        return f"{prefix}{absolute}{suffix}" if absolute else match.group(0)
 
     return _HTML_IMAGE.sub(replace_html, _MD_IMAGE.sub(replace_md, body))
 
 
-def _ensure_local(
-    raw_url: str,
-    page_url: str,
-    folder: Path,
-    fetcher: Fetcher,
-    cache: dict[str, str],
-) -> str | None:
+def _absolute_image_url(raw_url: str, page_url: str) -> str | None:
     if not raw_url or raw_url.startswith("#"):
         return None
     lower = raw_url.lower()
     if any(lower.startswith(scheme) for scheme in _SKIP_SCHEMES):
         return None
-    if raw_url.startswith("../../assets/") or raw_url.startswith("/raw/assets/"):
-        return None
-
     absolute = urljoin(page_url, raw_url)
-    if absolute in cache:
-        return cache[absolute]
     if urlparse(absolute).scheme not in {"http", "https"}:
         return None
-
-    try:
-        response = fetcher.get(absolute)
-        content = response.content
-        if not content or len(content) < 32:
-            return None
-        ext = _extension(absolute, response.headers.get("Content-Type", ""))
-        filename = f"{hashlib.sha1(absolute.encode()).hexdigest()[:16]}{ext}"
-        path = folder / filename
-        if not path.exists():
-            path.write_bytes(content)
-        relative = f"../../assets/ai-company-blogs/{folder.name}/{filename}"
-        cache[absolute] = relative
-        return relative
-    except Exception:
-        return None
+    return absolute
 
 
-def _extension(url: str, content_type: str) -> str:
-    suffix = Path(urlparse(url).path).suffix.lower()
-    if suffix in _IMAGE_EXTS:
-        return ".jpg" if suffix == ".jpeg" else suffix
-    guessed = mimetypes.guess_extension((content_type or "").split(";")[0].strip())
-    if guessed in {".jpe", ".jpeg"}:
-        return ".jpg"
-    if guessed in _IMAGE_EXTS:
-        return guessed
-    return ".png"
-
-
-# ---------------------------------------------------------------------------
-# Render / filename (与 scripts/clippings.ts sanitizeFilename 一致)
-# ---------------------------------------------------------------------------
-
+# 文件名与 scripts/clippings.ts sanitizeFilename 一致
 _CONTROL = re.compile(r"[\u0000-\u001f\u007f\u200b-\u200f\ufeff]")
 _ILLEGAL = re.compile(r'[<>:"/\\|?*#%{}$!`\'=+@&;]')
 _FULLWIDTH_JUNK = re.compile(r"[\uFF1A\uFF5C\uFF0F\uFE63\uFE31\uFE32]")
@@ -383,6 +324,27 @@ def write_markdown(output_dir: Path, company: str, article: Article, url: str) -
     temporary.write_text(_render_markdown(article, company, url), encoding="utf-8")
     temporary.replace(path)
     return path
+
+
+def update_markdown_body(path: Path, body: str) -> None:
+    """原地改写 Obsidian 笔记正文，保留 YAML frontmatter。"""
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        end = text.find("\n---\n", 3)
+        if end != -1:
+            head = text[: end + 5]
+            path.write_text(head + "\n" + body.strip() + "\n", encoding="utf-8")
+            return
+    path.write_text(body.strip() + "\n", encoding="utf-8")
+
+
+def read_markdown_body(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        end = text.find("\n---\n", 3)
+        if end != -1:
+            return text[end + 5 :].strip()
+    return text.strip()
 
 
 def _render_markdown(article: Article, company: str, url: str) -> str:

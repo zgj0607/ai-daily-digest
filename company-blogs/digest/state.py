@@ -22,6 +22,7 @@ class ArticleRow:
     attempts: int
     filepath: str
     error: str
+    translated: int = 1
 
 
 class State:
@@ -62,6 +63,12 @@ class State:
             );
             """
         )
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(articles)")}
+        # 旧数据默认视为已翻译，避免全量重译；新爬取的文章 mark_saved 时会置 0
+        if "translated" not in cols:
+            self.conn.execute(
+                "ALTER TABLE articles ADD COLUMN translated INTEGER NOT NULL DEFAULT 1"
+            )
         self.conn.commit()
 
     def ensure_source(self, source_id: str) -> None:
@@ -143,7 +150,7 @@ class State:
                 """
                 UPDATE articles
                 SET status = 'saved', title = ?, published = ?, filepath = ?, error = '',
-                    attempts = attempts + 1, updated_at = ?
+                    translated = 0, attempts = attempts + 1, updated_at = ?
                 WHERE source_id = ? AND url = ?
                 """,
                 (title, published, filepath, utc_now(), source_id, url),
@@ -162,6 +169,35 @@ class State:
             )
             self.conn.commit()
 
+    def mark_translated(self, source_id: str, url: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE articles
+                SET translated = 1, error = '', updated_at = ?
+                WHERE source_id = ? AND url = ?
+                """,
+                (utc_now(), source_id, url),
+            )
+            self.conn.commit()
+
+    def needs_translate(self, limit: int | None = None) -> list[ArticleRow]:
+        """已落盘但尚未翻译的文章（供翻译子任务消费）。"""
+        sql = """
+            SELECT * FROM articles
+            WHERE status = 'saved'
+              AND translated = 0
+              AND filepath != ''
+            ORDER BY updated_at ASC, url
+        """
+        params: list[object] = []
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self._lock:
+            rows = self.conn.execute(sql, params).fetchall()
+        return [self._article(row) for row in rows]
+
     def mark_failed(self, source_id: str, url: str, error: str) -> None:
         with self._lock:
             self.conn.execute(
@@ -173,14 +209,6 @@ class State:
                 (error[:500], utc_now(), source_id, url),
             )
             self.conn.commit()
-
-    def saved_filepath(self, source_id: str, url: str) -> str:
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT filepath FROM articles WHERE source_id = ? AND url = ? AND status = 'saved'",
-                (source_id, url),
-            ).fetchone()
-        return row["filepath"] if row else ""
 
     def finish_source(self, source_id: str, bootstrapped: bool, error: str = "") -> None:
         with self._lock:
@@ -196,18 +224,6 @@ class State:
             )
             self.conn.commit()
 
-    def has_unfinished(self, source_id: str, max_attempts: int) -> bool:
-        with self._lock:
-            row = self.conn.execute(
-                """
-                SELECT 1 FROM articles
-                WHERE source_id = ? AND status != 'saved' AND attempts < ?
-                LIMIT 1
-                """,
-                (source_id, max_attempts),
-            ).fetchone()
-        return row is not None
-
     def summary(self) -> list[sqlite3.Row]:
         with self._lock:
             return self.conn.execute(
@@ -220,7 +236,8 @@ class State:
                     s.last_error,
                     SUM(CASE WHEN a.status = 'saved' THEN 1 ELSE 0 END) AS saved,
                     SUM(CASE WHEN a.status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                    SUM(CASE WHEN a.status = 'failed' THEN 1 ELSE 0 END) AS failed
+                    SUM(CASE WHEN a.status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN a.status = 'saved' AND a.translated = 0 THEN 1 ELSE 0 END) AS untranslated
                 FROM sources s
                 LEFT JOIN articles a ON a.source_id = s.id
                 GROUP BY s.id
@@ -230,6 +247,7 @@ class State:
 
     @staticmethod
     def _article(row: sqlite3.Row) -> ArticleRow:
+        keys = row.keys()
         return ArticleRow(
             source_id=row["source_id"],
             url=row["url"],
@@ -240,4 +258,5 @@ class State:
             attempts=row["attempts"],
             filepath=row["filepath"],
             error=row["error"],
+            translated=int(row["translated"]) if "translated" in keys else 1,
         )

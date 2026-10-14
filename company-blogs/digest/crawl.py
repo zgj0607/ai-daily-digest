@@ -1,15 +1,23 @@
-"""发现 URL、并行抓取/翻译/落盘。"""
+"""发现 URL → 并行爬取落盘 → 并行读 Obsidian 翻译（爬取与翻译流水线重叠）。"""
 from __future__ import annotations
 
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from queue import Queue
 from xml.etree import ElementTree as ET
 
 from digest.config import Settings, Source
-from digest.content import extract_article, localize_images, write_markdown
+from digest.content import (
+    absolutize_images,
+    extract_article,
+    read_markdown_body,
+    update_markdown_body,
+    write_markdown,
+)
 from digest.dates import parse_date, to_iso
 from digest.http import Fetcher
 from digest.insight import enrich_insights
@@ -27,6 +35,9 @@ class _Item:
     lastmod: str = ""
 
 
+_TRANSLATE_STOP = object()
+
+
 def run(
     settings: Settings,
     only: str | None = None,
@@ -34,18 +45,71 @@ def run(
     summary_path: Path | None = None,
 ) -> int:
     sources = settings.enabled_sources(only)
+    source_by_id = {s.id: s for s in sources}
     state = State(settings.state_db)
     fetcher = Fetcher(settings.user_agent, settings.request_interval_seconds)
     translator = Translator.from_env()
     configure_llm_concurrency(settings.llm_concurrency)
+    crawl_workers = settings.article_concurrency
+    translate_workers = settings.llm_concurrency
     print(
-        f"[digest] 并行: source={settings.source_concurrency}, "
-        f"article={settings.article_concurrency}, llm={settings.llm_concurrency}"
+        f"[digest] 流水线: 发现={settings.source_concurrency}, "
+        f"爬取={crawl_workers}, 翻译={translate_workers}, llm={settings.llm_concurrency}"
     )
 
     reports = {s.id: SourceReport(s.id, s.name, 0, 0, 0) for s in sources}
-    saved_articles: list[SavedArticle] = []
+    this_run: list[SavedArticle] = []
+    translate_q: Queue[SavedArticle | object] = Queue()
+    translated_lock = threading.Lock()
+    translated_ok = 0
+    translated_fail = 0
+
+    def translate_loop() -> None:
+        nonlocal translated_ok, translated_fail
+        while True:
+            item = translate_q.get()
+            try:
+                if item is _TRANSLATE_STOP:
+                    return
+                assert isinstance(item, SavedArticle)
+                try:
+                    _translate_saved(item, translator, state)
+                    with translated_lock:
+                        translated_ok += 1
+                    print(f"[{item.source_id}] 已翻译 {item.filepath.name}")
+                except Exception as exc:
+                    with translated_lock:
+                        translated_fail += 1
+                    print(f"[{item.source_id}] 翻译失败（保留原文）{item.filepath.name}: {exc}")
+            finally:
+                translate_q.task_done()
+
+    translate_pool = ThreadPoolExecutor(
+        max_workers=translate_workers, thread_name_prefix="translate"
+    )
+    for _ in range(translate_workers):
+        translate_pool.submit(translate_loop)
+
     try:
+        # 先把历史未译完的笔记丢进翻译队列，与本次爬取重叠进行
+        backlog = state.needs_translate()
+        if backlog:
+            print(f"[digest] 续译未完成 {len(backlog)} 篇")
+            for row in backlog:
+                source = source_by_id.get(row.source_id)
+                name = source.name if source else row.source_id
+                translate_q.put(
+                    SavedArticle(
+                        source_id=row.source_id,
+                        source_name=name,
+                        title=row.title,
+                        url=row.url,
+                        published=row.published,
+                        description="",
+                        filepath=Path(row.filepath),
+                    )
+                )
+
         with ThreadPoolExecutor(max_workers=settings.source_concurrency) as pool:
             futures = {pool.submit(_discover_source, state, fetcher, source): source for source in sources}
             for future in as_completed(futures):
@@ -65,34 +129,39 @@ def run(
                 continue
             jobs.extend((source, row) for row in state.pending(source.id, settings.max_attempts, limit))
 
-        print(f"[digest] 待处理 {len(jobs)} 篇（并发 {settings.article_concurrency}）")
+        print(f"[digest] 待爬取 {len(jobs)} 篇（并发 {crawl_workers}）；翻译并行消费 Obsidian 文件")
         if jobs:
-            with ThreadPoolExecutor(max_workers=settings.article_concurrency) as pool:
+            with ThreadPoolExecutor(max_workers=crawl_workers, thread_name_prefix="crawl") as pool:
                 futures = {
-                    pool.submit(_process_article, settings, state, fetcher, translator, source, row): (source, row)
+                    pool.submit(_crawl_article, settings, state, fetcher, source, row): (source, row)
                     for source, row in jobs
                 }
                 for future in as_completed(futures):
                     source, row = futures[future]
                     try:
                         ok, message, saved = future.result()
-                        if ok:
+                        if ok and saved:
                             reports[source.id].saved += 1
-                            if saved:
-                                saved_articles.append(saved)
-                            print(f"[{source.id}] 保存 {message}")
+                            this_run.append(saved)
+                            translate_q.put(saved)
+                            print(f"[{source.id}] 已落盘 {message}")
                         else:
                             reports[source.id].failed += 1
-                            print(f"[{source.id}] 失败 {row.url}: {message}")
+                            print(f"[{source.id}] 爬取失败 {row.url}: {message}")
                     except Exception as exc:
                         reports[source.id].failed += 1
                         state.mark_failed(source.id, row.url, str(exc))
-                        print(f"[{source.id}] 失败 {row.url}: {exc}")
+                        print(f"[{source.id}] 爬取失败 {row.url}: {exc}")
 
         for source in sources:
             if not reports[source.id].error:
                 state.finish_source(source.id, bootstrapped=limit is None, error="")
     finally:
+        print("[digest] 等待翻译队列清空…")
+        translate_q.join()
+        for _ in range(translate_workers):
+            translate_q.put(_TRANSLATE_STOP)
+        translate_pool.shutdown(wait=True)
         fetcher.close()
         state.close()
 
@@ -103,21 +172,20 @@ def run(
         if item.error:
             print(f"{item.name}: 发现失败 {item.error}")
         else:
-            print(f"{item.name}: 发现 {item.discovered}，本次保存 {item.saved}，失败 {item.failed}")
-    print(f"合计: 保存 {saved}，失败 {failed}")
+            print(f"{item.name}: 发现 {item.discovered}，本次落盘 {item.saved}，失败 {item.failed}")
+    print(f"合计: 落盘 {saved}，爬取失败 {failed}，翻译成功 {translated_ok}，翻译失败 {translated_fail}")
 
     highlights = ""
-    if saved_articles:
-        # 简报提炼仍用本地模型（与翻译同一套 LLM），需在关机前完成
+    if this_run:
         highlights = enrich_insights(
-            saved_articles, translator, concurrency=settings.llm_concurrency
+            this_run, translator, concurrency=settings.llm_concurrency
         )
 
     report_path = settings.output_dir / f"{date.today().strftime('%Y%m%d')}-公司博客简报.md"
     write_blog_report(
         report_path,
         items,
-        saved_articles,
+        this_run,
         source_total=len(sources),
         highlights=highlights,
     )
@@ -141,10 +209,11 @@ def show_status(settings: Settings) -> int:
     for row in rows:
         stage = "已完成首次全量" if row["bootstrapped"] else "首次全量未完成"
         err = f"，上次错误: {row['last_error']}" if row["last_error"] else ""
+        untranslated = row["untranslated"] or 0
         print(
             f"{row['id']}: {stage}，水位 {row['watermark'] or '-'}，"
             f"已保存 {row['saved'] or 0}，待抓 {row['pending'] or 0}，失败 {row['failed'] or 0}，"
-            f"上次运行 {row['last_run_at'] or '-'}{err}"
+            f"待译 {untranslated}，上次运行 {row['last_run_at'] or '-'}{err}"
         )
     return 0
 
@@ -170,14 +239,14 @@ def _discover_source(state: State, fetcher: Fetcher, source: Source) -> tuple[in
     return len(found), ""
 
 
-def _process_article(
+def _crawl_article(
     settings: Settings,
     state: State,
     fetcher: Fetcher,
-    translator: Translator,
     source: Source,
     row: ArticleRow,
 ) -> tuple[bool, str, SavedArticle | None]:
+    """只负责抓取并写入 Obsidian 原文，不翻译。"""
     try:
         html = fetcher.text(row.url)
         article = extract_article(html, row.url, row.published, row.hint_kind)
@@ -185,17 +254,8 @@ def _process_article(
             raise RuntimeError("正文过短")
         if not article.title:
             article.title = row.title or article.title
-        original_body = article.body
-        description = excerpt_from_body(original_body, article.description)
-        try:
-            article.body = translator.add_bilingual(article.body)
-        except Exception as exc:
-            # 翻译失败仍落盘原文，避免整篇丢失
-            print(f"[{source.id}] 翻译失败，保存原文: {exc}")
-            article.body = original_body
-        article.body = localize_images(
-            article.body, row.url, settings.assets_dir, fetcher, source.id
-        )
+        description = excerpt_from_body(article.body, article.description)
+        article.body = absolutize_images(article.body, row.url)
         path = write_markdown(settings.output_dir, source.name, article, row.url)
         published = to_iso(article.published)
         state.mark_saved(source.id, row.url, article.title, published, str(path))
@@ -214,9 +274,26 @@ def _process_article(
         return False, str(exc), None
 
 
-# ---------------------------------------------------------------------------
-# Discovery (sitemap + feed)
-# ---------------------------------------------------------------------------
+def _translate_saved(article: SavedArticle, translator: Translator, state: State) -> None:
+    """读取已落盘的 Obsidian 文件，双语翻译后写回。"""
+    path = article.filepath
+    if not path.is_file():
+        raise RuntimeError(f"文件不存在: {path}")
+    body = read_markdown_body(path)
+    if len(body) < 40:
+        state.mark_translated(article.source_id, article.url)
+        return
+    try:
+        bilingual = translator.add_bilingual(body)
+    except Exception as exc:
+        # 翻译失败保留原文，仍标记为已处理以免死循环；needs_translate 不再捡起
+        print(f"[{article.source_id}] 翻译异常，保留原文: {exc}")
+        state.mark_translated(article.source_id, article.url)
+        return
+    if bilingual.strip() != body.strip():
+        update_markdown_body(path, bilingual)
+    state.mark_translated(article.source_id, article.url)
+
 
 def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
     items: dict[str, _Item] = {}
@@ -249,6 +326,13 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _child_text(node: ET.Element, name: str) -> str:
+    for child in node:
+        if _local(child.tag) == name and child.text:
+            return child.text.strip()
+    return ""
+
+
 def _sitemap_urls(fetcher: Fetcher, url: str, depth: int) -> list[tuple[str, str]]:
     if depth > 3:
         return []
@@ -258,30 +342,20 @@ def _sitemap_urls(fetcher: Fetcher, url: str, depth: int) -> list[tuple[str, str
         for node in root:
             if _local(node.tag) != "sitemap":
                 continue
-            loc = next((c.text.strip() for c in node if _local(c.tag) == "loc" and c.text), "")
+            loc = _child_text(node, "loc")
             if loc:
                 found.extend(_sitemap_urls(fetcher, loc, depth + 1))
         return found
-    found = []
-    for node in root:
-        if _local(node.tag) != "url":
-            continue
-        loc = lastmod = ""
-        for child in node:
-            name = _local(child.tag)
-            if name == "loc" and child.text:
-                loc = child.text.strip()
-            elif name == "lastmod" and child.text:
-                lastmod = child.text.strip()
-        if loc:
-            found.append((loc, lastmod))
-    return found
+    return [
+        (loc, _child_text(node, "lastmod"))
+        for node in root
+        if _local(node.tag) == "url" and (loc := _child_text(node, "loc"))
+    ]
 
 
 def _feed_entries(payload: bytes) -> list[tuple[str, str, str]]:
-    root = ET.fromstring(_strip_bom(payload))
     entries: list[tuple[str, str, str]] = []
-    for node in root.iter():
+    for node in ET.fromstring(_strip_bom(payload)).iter():
         if _local(node.tag) not in {"item", "entry"}:
             continue
         url = title = published = ""

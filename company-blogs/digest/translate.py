@@ -32,7 +32,6 @@ _CN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 _LETTERS = re.compile(
     r"[a-zA-Z\u0400-\u04ff\u00C0-\u024F\u1E00-\u1EFF\u0370-\u03ff\u0590-\u05ff\u0600-\u06ff\u0900-\u097f\u3040-\u30ff\uac00-\ud7af]"
 )
-_LOCAL_HOST = re.compile(r"127\.0\.0\.1|localhost|192\.168\.|10\.\d+\.|172\.(1[6-9]|2\d|3[01])\.")
 
 
 @dataclass
@@ -237,7 +236,7 @@ def _translate_blocks(blocks: list[str], call) -> list[str]:
         + "\n\n".join(f"--- {index} ---\n{block}" for index, block in enumerate(blocks))
     )
     try:
-        parsed = _parse_json(call(prompt))
+        parsed = parse_llm_json(call(prompt))
         output = [""] * len(blocks)
         for item in parsed.get("translations") or []:
             index = item.get("index")
@@ -249,18 +248,22 @@ def _translate_blocks(blocks: list[str], call) -> list[str]:
         return [""] * len(blocks)
 
 
-def _parse_json(text: str) -> dict:
+def parse_llm_json(text: str) -> dict:
+    """解析模型返回的 JSON（兼容 ```json 围栏与前后杂质）。"""
     json_text = text.strip()
     if json_text.startswith("```"):
         json_text = re.sub(r"^```(?:json)?\n?", "", json_text)
         json_text = re.sub(r"\n?```$", "", json_text)
     try:
-        return json.loads(json_text)
+        data = json.loads(json_text)
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", json_text, flags=re.S)
         if not match:
             raise
-        return json.loads(match.group(0))
+        data = json.loads(match.group(0))
+    if not isinstance(data, dict):
+        raise RuntimeError("LLM 返回的 JSON 不是对象")
+    return data
 
 
 def _parse_blocks(markdown: str) -> list[_Block]:

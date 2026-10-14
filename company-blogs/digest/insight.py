@@ -1,17 +1,14 @@
 """按业务视角提炼公司博客：问题 / 方法 / 验证 / 智能客服小实验。"""
 from __future__ import annotations
 
-import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
+from digest.content import read_markdown_body
 from digest.report import SavedArticle
-from digest.translate import Translator
+from digest.translate import Translator, parse_llm_json
 
 _BODY_LIMIT = 7000
-_FRONT_MATTER = re.compile(r"^---\n.*?\n---\n*", re.S)
-
 _INDUSTRY_LENS = (
     "基于智能体的智能客服（呼入、外呼、文本），面向生活服务"
     "（家修、家政、美容、牙医诊所、体检预约、快递、大件物流、无人配送、网约车）、"
@@ -25,14 +22,13 @@ def enrich_insights(
     *,
     concurrency: int = 3,
 ) -> str:
-    """为每篇文章填充四维洞察，并生成整期「行业迁移启示」。失败时尽量降级为空。"""
     if not articles:
         return ""
 
     print(f"[insight] 提炼 {len(articles)} 篇（并发 {concurrency}）…")
     workers = max(1, min(concurrency, len(articles)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_analyze_one, article, translator): article for article in articles}
+        futures = {pool.submit(_analyze_one, a, translator): a for a in articles}
         for future in as_completed(futures):
             article = futures[future]
             try:
@@ -42,16 +38,19 @@ def enrich_insights(
                 print(f"[insight] 失败 {article.source_name}: {article.title}: {exc}")
 
     try:
-        highlights = _synthesize_highlights(articles, translator)
+        text = _synthesize_highlights(articles, translator)
         print("[insight] 行业迁移启示已生成")
-        return highlights
+        return text
     except Exception as exc:
         print(f"[insight] 行业迁移启示生成失败: {exc}")
         return ""
 
 
 def _analyze_one(article: SavedArticle, translator: Translator) -> None:
-    body = _read_article_body(article.filepath)
+    try:
+        body = read_markdown_body(article.filepath)[:_BODY_LIMIT]
+    except OSError:
+        body = ""
     if len(body) < 80:
         body = article.description or article.title
     prompt = f"""你是 ToB 智能客服 / Agent 解决方案架构师。请阅读下面这篇 AI 公司博客，严格按四个角度提炼，用简体中文、务实、可落地，避免空话。
@@ -85,8 +84,7 @@ def _analyze_one(article: SavedArticle, translator: Translator) -> None:
 正文：
 {body}
 """
-    raw = translator.complete(prompt)
-    data = _parse_json(raw)
+    data = parse_llm_json(translator.complete(prompt))
     article.problem = _clean(data.get("problem"))
     article.method = _clean(data.get("method"))
     article.validation = _clean(data.get("validation"))
@@ -94,15 +92,14 @@ def _analyze_one(article: SavedArticle, translator: Translator) -> None:
 
 
 def _synthesize_highlights(articles: list[SavedArticle], translator: Translator) -> str:
-    bullets = []
-    for index, article in enumerate(articles[:20], 1):
-        bullets.append(
-            f"{index}. [{article.source_name}] {article.title}\n"
-            f"   问题: {article.problem or '（未提炼）'}\n"
-            f"   方法: {article.method or '（未提炼）'}\n"
-            f"   验证: {article.validation or '（未提炼）'}\n"
-            f"   实验: {article.experiment or '（未提炼）'}"
-        )
+    bullets = [
+        f"{i}. [{a.source_name}] {a.title}\n"
+        f"   问题: {a.problem or '（未提炼）'}\n"
+        f"   方法: {a.method or '（未提炼）'}\n"
+        f"   验证: {a.validation or '（未提炼）'}\n"
+        f"   实验: {a.experiment or '（未提炼）'}"
+        for i, a in enumerate(articles[:20], 1)
+    ]
     prompt = f"""根据以下公司博客的四维提炼，写一段「行业迁移启示」（4-7 句话，简体中文）。
 
 读者是做 {_INDUSTRY_LENS} 的产品/解决方案同学。
@@ -120,34 +117,5 @@ def _synthesize_highlights(articles: list[SavedArticle], translator: Translator)
     return _clean(translator.complete(prompt))
 
 
-def _read_article_body(path: Path) -> str:
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    text = _FRONT_MATTER.sub("", text).strip()
-    # 双语正文可能很长，优先保留前部
-    return text[:_BODY_LIMIT]
-
-
 def _clean(value: object) -> str:
-    if not isinstance(value, str):
-        return ""
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def _parse_json(text: str) -> dict:
-    json_text = text.strip()
-    if json_text.startswith("```"):
-        json_text = re.sub(r"^```(?:json)?\n?", "", json_text)
-        json_text = re.sub(r"\n?```$", "", json_text)
-    try:
-        data = json.loads(json_text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", json_text, flags=re.S)
-        if not match:
-            raise
-        data = json.loads(match.group(0))
-    if not isinstance(data, dict):
-        raise RuntimeError("洞察结果不是 JSON 对象")
-    return data
+    return re.sub(r"\s+", " ", value).strip() if isinstance(value, str) else ""

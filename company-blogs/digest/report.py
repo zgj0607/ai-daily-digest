@@ -42,9 +42,7 @@ def write_blog_report(
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        generate_blog_report(
-            items, articles, source_total=source_total, highlights=highlights
-        ),
+        generate_blog_report(items, articles, source_total=source_total, highlights=highlights),
         encoding="utf-8",
     )
     return path
@@ -57,20 +55,16 @@ def generate_blog_report(
     source_total: int,
     highlights: str = "",
 ) -> str:
-    today = date.today()
-    date_str = today.isoformat()
+    date_str = date.today().isoformat()
     saved = sum(i.saved for i in items)
     failed = sum(i.failed for i in items)
     ok_sources = sum(1 for i in items if not i.error)
-    with_saves = [i for i in items if i.saved > 0]
-
+    with_saves = sorted((i for i in items if i.saved > 0), key=lambda x: (-x.saved, x.name))
     sorted_articles = sorted(
-        articles,
-        key=lambda a: (a.published or "", a.source_name, a.title),
-        reverse=True,
+        articles, key=lambda a: (a.published or "", a.source_name, a.title), reverse=True
     )
 
-    lines: list[str] = [
+    lines = [
         f"# 📰 AI 公司博客简报 — {date_str}",
         "",
         f"> 扫描 {source_total} 家 AI 公司博客，本次新收录 **{saved}** 篇"
@@ -78,126 +72,78 @@ def generate_blog_report(
         + "；按「问题 / 方法 / 验证 / 智能客服小实验」四维提炼",
         "",
     ]
-
     if highlights.strip():
-        lines.append("## 📝 行业迁移启示")
-        lines.append("")
-        lines.append(highlights.strip())
-        lines.append("")
-        lines.append("---")
-        lines.append("")
+        lines += ["## 📝 行业迁移启示", "", highlights.strip(), "", "---", ""]
 
     if sorted_articles:
-        lines.append("## 🏆 本次新文")
-        lines.append("")
-        for index, article in enumerate(sorted_articles[:10]):
-            medal = ["🥇", "🥈", "🥉"][index] if index < 3 else f"{index + 1}."
-            lines.extend(_article_block(article, medal, heading_level=0))
-        lines.append("---")
-        lines.append("")
+        lines += ["## 🏆 本次新文", ""]
+        for i, article in enumerate(sorted_articles[:10]):
+            medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i + 1}."
+            lines += _article_block(article, f"{medal} **{article.title}**", bold_company=False)
+        lines += ["---", ""]
     else:
-        lines.append("本次各来源均无新保存文章。")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
+        lines += ["本次各来源均无新保存文章。", "", "---", ""]
 
-    lines.append("## 📊 数据概览")
-    lines.append("")
-    lines.append("| 扫描源 | 本次保存 | 失败 | 有新文的公司 |")
-    lines.append("|:---:|:---:|:---:|:---:|")
-    lines.append(
-        f"| {ok_sources}/{source_total} | **{saved}** 篇 | {failed} 篇 | "
-        f"**{len(with_saves)}** 家 |"
-    )
-    lines.append("")
-
+    lines += [
+        "## 📊 数据概览",
+        "",
+        "| 扫描源 | 本次保存 | 失败 | 有新文的公司 |",
+        "|:---:|:---:|:---:|:---:|",
+        f"| {ok_sources}/{source_total} | **{saved}** 篇 | {failed} 篇 | **{len(with_saves)}** 家 |",
+        "",
+    ]
     if with_saves:
-        lines.append("### 公司分布")
-        lines.append("")
-        lines.append("```mermaid")
-        lines.append("pie showData")
-        lines.append('    title "本次新文公司分布"')
-        for item in sorted(with_saves, key=lambda x: (-x.saved, x.name)):
-            safe = item.name.replace('"', "'")
-            lines.append(f'    "{safe}" : {item.saved}')
-        lines.append("```")
-        lines.append("")
-        names = "、".join(i.name for i in sorted(with_saves, key=lambda x: (-x.saved, x.name)))
-        lines.append(f"🏷️ {names}")
-        lines.append("")
+        lines += ["### 公司分布", "", "```mermaid", "pie showData", '    title "本次新文公司分布"']
+        lines += [f'    "{i.name.replace(chr(34), chr(39))}" : {i.saved}' for i in with_saves]
+        lines += ["```", "", f"🏷️ {'、'.join(i.name for i in with_saves)}", ""]
 
     errors = [i for i in items if i.error]
     if errors:
-        lines.append("### 发现失败")
-        lines.append("")
-        for item in errors:
-            lines.append(f"- {item.name}：{item.error}")
-        lines.append("")
+        lines += ["### 发现失败", ""] + [f"- {i.name}：{i.error}" for i in errors] + [""]
 
-    lines.append("---")
-    lines.append("")
-
+    lines += ["---", ""]
     if sorted_articles:
         groups: dict[str, list[SavedArticle]] = {}
         for article in sorted_articles:
             groups.setdefault(article.source_name, []).append(article)
         index = 0
         for company, group in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
-            lines.append(f"## {company}")
-            lines.append("")
+            lines += [f"## {company}", ""]
             for article in group:
                 index += 1
-                lines.extend(_article_block(article, f"### {index}.", heading_level=3))
-                lines.append("---")
-                lines.append("")
+                lines += _article_block(
+                    article, f"### {index}. {article.title}", bold_company=True
+                )
+                lines += ["---", ""]
 
     now = datetime.now().strftime("%H:%M")
-    lines.append(
-        f"*生成于 {date_str} {now} | 扫描 {ok_sources}/{source_total} 源 → 新收录 {saved} 篇*"
-    )
-    lines.append(
+    lines += [
+        f"*生成于 {date_str} {now} | 扫描 {ok_sources}/{source_total} 源 → 新收录 {saved} 篇*",
         "*提炼视角：具体问题 → 方法与理由 → 验证与数据条件 → "
-        "智能客服（呼入/外呼/文本）在生活服务·金融·保险·支付的小实验*"
-    )
-    lines.append("")
+        "智能客服（呼入/外呼/文本）在生活服务·金融·保险·支付的小实验*",
+        "",
+    ]
     return "\n".join(lines)
 
 
-def _article_block(article: SavedArticle, lead: str, *, heading_level: int) -> list[str]:
+def _article_block(article: SavedArticle, heading: str, *, bold_company: bool) -> list[str]:
     when = _humanize_published(article.published)
-    lines: list[str] = []
-    if heading_level == 3:
-        lines.append(f"{lead} {article.title}")
-        lines.append("")
-    else:
-        lines.append(f"{lead} **{article.title}**")
-        lines.append("")
-
-    meta = f"[{article.title}]({article.url}) — "
-    meta += f"**{article.source_name}**" if heading_level == 3 else article.source_name
-    if when:
-        meta += f" · {when}"
-    lines.append(meta)
-
+    company = f"**{article.source_name}**" if bold_company else article.source_name
+    meta = f"[{article.title}]({article.url}) — {company}" + (f" · {when}" if when else "")
+    lines = [heading, "", meta]
     if article.problem or article.method or article.validation or article.experiment:
         lines.append("")
-        if article.problem:
-            lines.append(f"- **面对的问题**：{article.problem}")
-        if article.method:
-            lines.append(f"- **方法与理由**：{article.method}")
-        if article.validation:
-            lines.append(f"- **验证与条件**：{article.validation}")
-        if article.experiment:
-            lines.append(f"- **客服小实验**：{article.experiment}")
+        for label, value in (
+            ("面对的问题", article.problem),
+            ("方法与理由", article.method),
+            ("验证与条件", article.validation),
+            ("客服小实验", article.experiment),
+        ):
+            if value:
+                lines.append(f"- **{label}**：{value}")
     elif article.description:
-        lines.append("")
-        lines.append(f"> {article.description}")
-
-    note_rel = _rel_from_report(article.filepath)
-    if note_rel:
-        lines.append("")
-        lines.append(f"📎 [Obsidian 笔记]({note_rel})")
-    lines.append("")
+        lines += ["", f"> {article.description}"]
+    lines += ["", f"📎 [Obsidian 笔记](./{article.filepath.parent.name}/{article.filepath.name})", ""]
     return lines
 
 
@@ -224,8 +170,7 @@ def _humanize_published(value: str) -> str:
         return value[:10]
     if published.tzinfo is not None:
         published = published.astimezone().replace(tzinfo=None)
-    diff = datetime.now() - published
-    mins = int(diff.total_seconds() // 60)
+    mins = int((datetime.now() - published).total_seconds() // 60)
     if mins < 0:
         return published.date().isoformat()
     if mins < 60:
@@ -234,10 +179,4 @@ def _humanize_published(value: str) -> str:
     if hours < 24:
         return f"{hours} 小时前"
     days = hours // 24
-    if days < 7:
-        return f"{days} 天前"
-    return published.date().isoformat()
-
-
-def _rel_from_report(article_path: Path) -> str:
-    return f"./{article_path.parent.name}/{article_path.name}"
+    return f"{days} 天前" if days < 7 else published.date().isoformat()

@@ -2,7 +2,9 @@
 
 由上级目录的 `run_digest.sh` 在 RSS 日报之后调用。本地模型还开着时抓取并翻译，全部结束再关机。
 
-文章写到 `/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs/<公司名>/`，文件名是 `20261004-博客文章标题.md`（特殊字符处理与日报剪藏一致）。每次爬取后在同目录生成 `YYYYMMDD-公司博客简报.md`（格式对齐 RSS 简报），并用本地模型按四维提炼：具体问题、方法与理由、验证与数据条件、面向智能客服（呼入/外呼/文本）在生活服务·金融·保险·支付的小实验。正文图片下载到 `raw/assets/ai-company-blogs/<公司id>/`，Markdown 内改为相对路径 `../../assets/...`。进度在本目录 `state/crawl.sqlite`。
+流水线：爬取线程只负责抓取并写入 Obsidian 原文；翻译线程并行读取已落盘文件做双语翻译后写回。两者重叠执行，爬取不再被 LLM 拖慢。未译完的笔记下次会自动续译。
+
+文章写到 `/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs/<公司名>/`，文件名是 `20261004-博客文章标题.md`（特殊字符处理与日报剪藏一致）。每次爬取后在同目录生成 `YYYYMMDD-公司博客简报.md`（格式对齐 RSS 简报），并用本地模型按四维提炼：具体问题、方法与理由、验证与数据条件、面向智能客服（呼入/外呼/文本）在生活服务·金融·保险·支付的小实验。正文图片不下载，Markdown 中保留博客原始图片地址（相对路径会解析为绝对 URL）。进度在本目录 `state/crawl.sqlite`。
 
 单独补跑：
 
