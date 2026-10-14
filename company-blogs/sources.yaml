@@ -6,7 +6,7 @@ max_attempts: 3
 # 并行：发现 / 爬取落盘（IO）/ 翻译与 LLM（对齐本地 4090）
 # 爬取与翻译流水线重叠：article 只管抓取写 Obsidian，llm 线程读文件翻译
 source_concurrency: 3
-article_concurrency: 8
+article_concurrency: 3
 llm_concurrency: 3
 
 sources:

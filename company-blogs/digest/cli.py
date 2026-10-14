@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--limit", type=int, help="每个来源本次最多新抓多少篇")
     run_p.add_argument("--output-dir", type=Path, help="覆盖 Markdown 输出目录")
     run_p.add_argument("--state", type=Path, help="覆盖进度数据库路径")
-    run_p.add_argument("--article-concurrency", type=int, help="爬取并发（默认 8）")
+    run_p.add_argument("--article-concurrency", type=int, help="爬取并发（默认 3）")
     run_p.add_argument("--source-concurrency", type=int, help="发现并发（默认 3）")
     run_p.add_argument("--llm-concurrency", type=int, help="翻译/LLM 并发（默认 3）")
     run_p.add_argument("--summary", type=Path, help="额外复制简报到该路径")

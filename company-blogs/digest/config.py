@@ -83,7 +83,7 @@ def load_settings(path: Path | None = None) -> Settings:
         user_agent=str(raw.get("user_agent") or "ai-company-blog-digest/0.1"),
         max_attempts=int(raw.get("max_attempts") or 3),
         source_concurrency=max(1, int(raw.get("source_concurrency") or 3)),
-        article_concurrency=max(1, int(raw.get("article_concurrency") or 8)),
+        article_concurrency=max(1, int(raw.get("article_concurrency") or 3)),
         llm_concurrency=max(1, int(raw.get("llm_concurrency") or 3)),
         sources=tuple(sources),
     )
