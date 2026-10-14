@@ -128,7 +128,7 @@ set -e
 
 # 本地模型仍在运行，接着抓 AI 公司博客并翻译，完成后再关机（使用本机全局 python3）
 BLOG_OBSIDIAN_DIR="/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs"
-BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-公司博客简报.md"
+BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-AI公司博客简报.md"
 echo "[digest] 开始抓取 AI 公司博客..."
 set +e
 (cd "$DIGEST_DIR/company-blogs" && python3 -m digest run --summary "$BLOG_SUMMARY")
