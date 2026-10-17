@@ -181,6 +181,25 @@ class State:
             )
             self.conn.commit()
 
+    def library_counts(self, source_ids: list[str]) -> tuple[int, int, int]:
+        """已启用源在库中的 (已爬取, 已翻译, 未翻译)。"""
+        if not source_ids:
+            return 0, 0, 0
+        marks = ",".join("?" * len(source_ids))
+        with self._lock:
+            row = self.conn.execute(
+                f"""
+                SELECT
+                    SUM(CASE WHEN status = 'saved' THEN 1 ELSE 0 END) AS saved,
+                    SUM(CASE WHEN status = 'saved' AND translated = 1 THEN 1 ELSE 0 END) AS translated,
+                    SUM(CASE WHEN status = 'saved' AND translated = 0 THEN 1 ELSE 0 END) AS untranslated
+                FROM articles
+                WHERE source_id IN ({marks})
+                """,
+                source_ids,
+            ).fetchone()
+        return int(row["saved"] or 0), int(row["translated"] or 0), int(row["untranslated"] or 0)
+
     def needs_translate(self, limit: int | None = None) -> list[ArticleRow]:
         """已落盘但尚未翻译的文章（供翻译子任务消费）。"""
         sql = """

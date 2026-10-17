@@ -16,4 +16,4 @@ python3 -m digest run --article-concurrency 3 --llm-concurrency 3
 python3 -m digest status
 ```
 
-站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。翻译先用本地 `qwen3.6-27b`，失败后再用 `GEMINI_API_KEY`，最后用 `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_MODEL`。`run_digest.sh` 会带上这些环境变量。
+站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。翻译同时使用本地 `LOCAL_LLM_*` 和云端千问 `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_MODEL`。云端返回限流（5 小时 6000 次）后，当次和后续请求都改走本地模型；其他失败会改试另一边，两边都失败再用 `GEMINI_API_KEY`。`run_digest.sh` 会带上这些环境变量。

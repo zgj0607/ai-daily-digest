@@ -39,6 +39,56 @@ class _Item:
 _TRANSLATE_STOP = object()
 
 
+class _Progress:
+    """爬取与翻译的本次总量和完成数。发现结束前只计数，之后每变一次打印一行。"""
+
+    def __init__(self) -> None:
+        self.ready = False
+        self.crawl_total = 0
+        self.crawl_done = 0
+        self.crawl_ok = 0
+        self.translate_total = 0
+        self.translate_done = 0
+        self.translate_ok = 0
+        self._lock = threading.Lock()
+
+    def arm(self, crawl_total: int, translate_total: int) -> None:
+        with self._lock:
+            self.crawl_total = crawl_total
+            self.translate_total = translate_total
+            self.ready = True
+            self._emit()
+
+    def note_crawl(self, ok: bool) -> None:
+        with self._lock:
+            self.crawl_done += 1
+            if ok:
+                self.crawl_ok += 1
+            elif self.translate_total > self.translate_done:
+                self.translate_total -= 1
+            self._emit()
+
+    def note_translate(self, ok: bool) -> None:
+        with self._lock:
+            self.translate_done += 1
+            if ok:
+                self.translate_ok += 1
+            self._emit()
+
+    def _emit(self) -> None:
+        if not self.ready:
+            return
+        crawl_fail = self.crawl_done - self.crawl_ok
+        translate_fail = self.translate_done - self.translate_ok
+        print(
+            f"[digest] 进度 爬取 {self.crawl_done}/{self.crawl_total}"
+            f"（成功 {self.crawl_ok}，失败 {crawl_fail}）"
+            f" | 翻译 {self.translate_done}/{self.translate_total}"
+            f"（成功 {self.translate_ok}，失败 {translate_fail}）",
+            flush=True,
+        )
+
+
 def run(
     settings: Settings,
     only: str | None = None,
@@ -64,6 +114,7 @@ def run(
     translated_lock = threading.Lock()
     translated_ok = 0
     translated_fail = 0
+    progress = _Progress()
 
     def translate_loop() -> None:
         nonlocal translated_ok, translated_fail
@@ -77,11 +128,13 @@ def run(
                     _translate_saved(item, translator, state)
                     with translated_lock:
                         translated_ok += 1
-                    print(f"[{item.source_id}] 已翻译 {item.filepath.name}")
+                    print(f"[{item.source_id}] 已翻译 {item.filepath.name}", flush=True)
+                    progress.note_translate(True)
                 except Exception as exc:
                     with translated_lock:
                         translated_fail += 1
-                    print(f"[{item.source_id}] 翻译失败（保留原文）{item.filepath.name}: {exc}")
+                    print(f"[{item.source_id}] 翻译失败（保留原文）{item.filepath.name}: {exc}", flush=True)
+                    progress.note_translate(False)
             finally:
                 translate_q.task_done()
 
@@ -94,9 +147,7 @@ def run(
     try:
         # 先续译历史未完成笔记（有上限，避免拖垮本次关机窗口）
         backlog = state.needs_translate(limit=50)
-        if backlog:
-            print(f"[digest] 续译未完成 {len(backlog)} 篇（最多 50）")
-            for row in backlog:
+        for row in backlog:
                 source = source_by_id.get(row.source_id)
                 name = source.name if source else row.source_id
                 translate_q.put(
@@ -130,7 +181,23 @@ def run(
                 continue
             jobs.extend((source, row) for row in state.pending(source.id, settings.max_attempts, limit))
 
-        print(f"[digest] 待爬取 {len(jobs)} 篇（并发 {crawl_workers}）；翻译并行消费 Obsidian 文件")
+        saved_n, translated_n, untranslated_n = state.library_counts([s.id for s in sources])
+        need_crawl = len(jobs)
+        need_translate = len(backlog) + need_crawl
+        backlog_note = f"未译积压纳入 {len(backlog)} 篇"
+        if untranslated_n > len(backlog):
+            backlog_note += f"（库内未译 {untranslated_n} 篇，本次最多续译 {len(backlog)} 篇）"
+        limit_note = f"，每源上限 {limit} 篇" if limit is not None else ""
+        print(
+            f"[digest] 数据库比对: 已爬取 {saved_n} 篇，已翻译 {translated_n} 篇",
+            flush=True,
+        )
+        print(
+            f"[digest] 本次需要爬取 {need_crawl} 篇{limit_note}，需要翻译 {need_translate} 篇"
+            f"（{backlog_note}，新爬取 {need_crawl} 篇落盘后翻译）",
+            flush=True,
+        )
+        progress.arm(need_crawl, need_translate)
         if jobs:
             with ThreadPoolExecutor(max_workers=crawl_workers, thread_name_prefix="crawl") as pool:
                 futures = {
@@ -145,14 +212,17 @@ def run(
                             reports[source.id].saved += 1
                             this_run.append(saved)
                             translate_q.put(saved)
-                            print(f"[{source.id}] 已落盘 {message}")
+                            print(f"[{source.id}] 已落盘 {message}", flush=True)
+                            progress.note_crawl(True)
                         else:
                             reports[source.id].failed += 1
-                            print(f"[{source.id}] 爬取失败 {row.url}: {message}")
+                            print(f"[{source.id}] 爬取失败 {row.url}: {message}", flush=True)
+                            progress.note_crawl(False)
                     except Exception as exc:
                         reports[source.id].failed += 1
                         state.mark_failed(source.id, row.url, str(exc))
-                        print(f"[{source.id}] 爬取失败 {row.url}: {exc}")
+                        print(f"[{source.id}] 爬取失败 {row.url}: {exc}", flush=True)
+                        progress.note_crawl(False)
 
         for source in sources:
             if not reports[source.id].error:

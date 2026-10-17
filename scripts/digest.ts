@@ -536,6 +536,65 @@ function inferOpenAIModel(apiBase: string): string {
   return OPENAI_DEFAULT_MODEL;
 }
 
+interface TranslateBackend {
+  name: string;
+  apiKey: string;
+  apiBase: string;
+  model: string;
+  cloud?: boolean;
+}
+
+function isRateLimited(reason: string): boolean {
+  return /429|rate limit|ratelimit|too many requests|throttl|quota|限流|请求频率|requestlimit/i.test(reason);
+}
+
+/** 剪藏翻译：本地 Qwen 与云端千问按空闲程度同时接请求。云端限流后关闭该通道。 */
+function createClippingTranslateClient(backends: TranslateBackend[], fallback: AIClient): AIClient {
+  const pool = backends.filter(item => item.apiKey && item.apiBase && item.model);
+  if (!pool.length) return fallback;
+  const inflight = pool.map(() => 0);
+  let cloudClosed = false;
+  console.log(`[digest] 剪藏翻译通道: ${pool.map(item => item.name).join(' | ')}`);
+  return {
+    async call(prompt: string): Promise<string> {
+      const order = pool
+        .map((_, index) => index)
+        .filter(index => !(pool[index]!.cloud && cloudClosed))
+        .sort((a, b) => inflight[a]! - inflight[b]!);
+      const errors: string[] = [];
+      for (const index of order) {
+        const backend = pool[index]!;
+        if (backend.cloud && cloudClosed) continue;
+        inflight[index]! += 1;
+        try {
+          const text = await callOpenAICompatible(prompt, backend.apiKey, backend.apiBase, backend.model);
+          if (!text.trim()) throw new Error('返回内容为空');
+          return text;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          errors.push(`${backend.name}: ${reason}`);
+          if (backend.cloud && isRateLimited(reason)) {
+            if (!cloudClosed) {
+              cloudClosed = true;
+              console.warn(`[digest] 云端千问触发限流（5小时6000次），后续翻译改走本地模型。原因: ${reason}`);
+            }
+          } else {
+            console.warn(`[digest] ${backend.name} 翻译失败，改试其他通道。原因: ${reason}`);
+          }
+        } finally {
+          inflight[index]! -= 1;
+        }
+      }
+      try {
+        return await fallback.call(prompt);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`所有翻译接口都失败: ${errors.join(' | ')} | fallback: ${reason}`);
+      }
+    },
+  };
+}
+
 function createAIClient(config: {
   geminiApiKey?: string;
   openaiApiKey?: string;
@@ -1040,11 +1099,17 @@ async function main(): Promise<void> {
   }
 
   const geminiApiKey = process.env.GEMINI_API_KEY;
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  const openaiApiBase = process.env.OPENAI_API_BASE;
-  const openaiModel = process.env.OPENAI_MODEL;
+  const localApiKey = process.env.LOCAL_LLM_API_KEY?.trim() || '';
+  const localApiBase = (process.env.LOCAL_LLM_API_BASE?.trim() || '').replace(/\/+$/, '');
+  const localModel = process.env.LOCAL_LLM_MODEL?.trim() || '';
+  const cloudApiKey = process.env.OPENAI_API_KEY?.trim() || '';
+  const cloudApiBase = (process.env.OPENAI_API_BASE?.trim() || '').replace(/\/+$/, '');
+  const cloudModel = (process.env.OPENAI_MODEL || '').trim();
+  const scoringKey = localApiKey || cloudApiKey;
+  const scoringBase = localApiBase || cloudApiBase || OPENAI_DEFAULT_API_BASE;
+  const scoringModel = localModel || cloudModel;
 
-  const profile = resolveLlmProfile(openaiApiBase);
+  const profile = resolveLlmProfile(scoringBase);
   aiConcurrency = aiConcurrency
     ?? parsePositiveInt(process.env.AI_CONCURRENCY, profile.aiConcurrency);
   scoreBatch = scoreBatch
@@ -1054,17 +1119,17 @@ async function main(): Promise<void> {
   clippingsConcurrency = clippingsConcurrency
     ?? parsePositiveInt(process.env.CLIPPINGS_CONCURRENCY, profile.clippingsConcurrency);
 
-  if (!geminiApiKey && !openaiApiKey) {
-    console.error('[digest] Error: Missing API key. Set GEMINI_API_KEY and/or OPENAI_API_KEY.');
+  if (!geminiApiKey && !scoringKey) {
+    console.error('[digest] Error: Missing API key. Set LOCAL_LLM_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY.');
     console.error('[digest] Gemini key: https://aistudio.google.com/apikey');
     process.exit(1);
   }
 
   const aiClient = createAIClient({
     geminiApiKey,
-    openaiApiKey,
-    openaiApiBase,
-    openaiModel,
+    openaiApiKey: scoringKey,
+    openaiApiBase: scoringBase,
+    openaiModel: scoringModel,
   });
 
   if (!outputPath) {
@@ -1079,17 +1144,16 @@ async function main(): Promise<void> {
   console.log(`[digest] Top N: ${topN}`);
   console.log(`[digest] Language: ${lang}`);
   console.log(`[digest] Feed concurrency: ${feedConcurrency}`);
-  console.log(`[digest] LLM profile: ${isLocalApiBase(openaiApiBase) ? 'local RTX4090/Qwen' : 'cloud'}`);
+  console.log(`[digest] LLM profile: ${isLocalApiBase(scoringBase) ? 'local RTX4090/Qwen' : 'cloud'}`);
   console.log(`[digest] AI concurrency: ${aiConcurrency} | score-batch: ${scoreBatch} | summary-batch: ${summaryBatch}`);
   console.log(`[digest] Clippings concurrency: ${clippingsConcurrency}`);
   console.log(`[digest] Clippings dir: ${clippingsDir}`);
   console.log(`[digest] Output: ${outputPath}`);
   console.log(`[digest] Stage: ${checkpoint.state.stage}`);
   console.log(`[digest] AI provider: ${geminiApiKey ? 'Gemini (primary)' : 'OpenAI-compatible (primary)'}`);
-  if (openaiApiKey) {
-    const resolvedBase = (openaiApiBase?.trim() || OPENAI_DEFAULT_API_BASE).replace(/\/+$/, '');
-    const resolvedModel = openaiModel?.trim() || inferOpenAIModel(resolvedBase);
-    console.log(`[digest] Fallback: ${resolvedBase} (model=${resolvedModel})`);
+  console.log(`[digest] 评分模型: ${scoringBase} (model=${scoringModel || inferOpenAIModel(scoringBase)})`);
+  if (cloudApiKey && cloudApiBase && cloudApiBase !== localApiBase) {
+    console.log(`[digest] 云端翻译: ${cloudApiBase} (model=${cloudModel || 'qwen'})`);
   }
   console.log('');
 
@@ -1119,7 +1183,7 @@ async function main(): Promise<void> {
   }
 
   const byLink = new Map(recentArticles.map(a => [a.link, a]));
-  const isLocalLLM = isLocalApiBase(openaiApiBase);
+  const isLocalLLM = isLocalApiBase(scoringBase);
 
   let articlesToScore: Article[];
   if (checkpoint.state.score.candidateLinks.length > 0) {
@@ -1263,11 +1327,30 @@ async function main(): Promise<void> {
   if (!checkpoint.state.clippingsComplete) {
     await checkpoint.setStage('clippings');
     console.log(`[digest] Step 5/5: Saving full article clippings (${finalArticles.length} articles)...`);
+    const translateBackends: TranslateBackend[] = [];
+    if (localApiKey && localApiBase) {
+      translateBackends.push({
+        name: `本地 Qwen (${localApiBase}, model=${localModel || 'qwen'})`,
+        apiKey: localApiKey,
+        apiBase: localApiBase,
+        model: localModel || 'qwen3.6-27b',
+      });
+    }
+    if (cloudApiKey && cloudApiBase && cloudApiBase !== localApiBase) {
+      translateBackends.push({
+        name: `云端 Qwen (${cloudApiBase}, model=${cloudModel || 'qwen'})`,
+        apiKey: cloudApiKey,
+        apiBase: cloudApiBase,
+        model: cloudModel || 'qwen-plus',
+        cloud: true,
+      });
+    }
+    const translateClient = createClippingTranslateClient(translateBackends, aiClient);
     const clippingCount = await saveArticleClippings(
       finalArticles,
       clippingsDir,
       clippingsConcurrency,
-      aiClient,
+      translateClient,
       {
         skipLinks: new Set(checkpoint.state.clippingsDoneLinks),
         onSaved: link => checkpoint.markClippingDone(link),

@@ -10,15 +10,36 @@ PIPELINE_DIR="${PIPELINE_DIR:-$HOME/Documents/PycharmProject/Video-Article-Gener
 DIGEST_DIR="/Users/zhou/Documents/PycharmProject/ai-daily-digest"
 UBUNTU_HOST="${AI_UBUNTU_HOST:-192.168.110.38}"
 
-export OPENAI_MODEL="qwen3.6-27b"
-export OPENAI_API_KEY="sk-litellm-local"
+# 云端千问读 OPENAI_*。交互式 shell 没带上时，从 ~/.zshrc 补齐。
+_zshrc_assign() {
+  local name="$1" line
+  [ -f "$HOME/.zshrc" ] || return 0
+  line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$HOME/.zshrc" | tail -1 || true)
+  [ -n "$line" ] || return 0
+  printf '%s' "$line" | sed -E "s/^[^=]*=//; s/^[[:space:]]*//; s/[[:space:]]*$//; s/^[\"']//; s/[\"']$//"
+}
+[ -n "${OPENAI_API_KEY:-}" ] || OPENAI_API_KEY="$(_zshrc_assign OPENAI_API_KEY)"
+[ -n "${OPENAI_API_BASE:-}" ] || OPENAI_API_BASE="$(_zshrc_assign OPENAI_API_BASE)"
+[ -n "${OPENAI_MODEL:-}" ] || OPENAI_MODEL="$(_zshrc_assign OPENAI_MODEL)"
+export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL
+_cloud_key="$OPENAI_API_KEY"
+_cloud_base="$OPENAI_API_BASE"
+_cloud_model="$OPENAI_MODEL"
 
 if [ -f "$PIPELINE_DIR/mac/.env" ]; then
   # shellcheck disable=SC1091
   set -a; source "$PIPELINE_DIR/mac/.env"; set +a
   KEY=$(grep '^LITELLM_MASTER_KEY=' "$PIPELINE_DIR/mac/.env" | cut -d= -f2- || true)
-  [ -n "${KEY:-}" ] && export OPENAI_API_KEY="$KEY"
 fi
+# mac/.env 里的 OPENAI_API_KEY 是本地 LiteLLM，云端配置以启动前的 OPENAI_* 为准
+[ -n "$_cloud_key" ] && export OPENAI_API_KEY="$_cloud_key"
+[ -n "$_cloud_base" ] && export OPENAI_API_BASE="$_cloud_base"
+[ -n "$_cloud_model" ] && export OPENAI_MODEL="$_cloud_model"
+unset _cloud_key _cloud_base _cloud_model
+
+# 本地模型单独配置，不覆盖上面的云端 OPENAI_*
+export LOCAL_LLM_MODEL="qwen3.6-27b"
+export LOCAL_LLM_API_KEY="${KEY:-${LITELLM_MASTER_KEY:-sk-litellm-local}}"
 
 # .env 里空值不覆盖默认
 export AI_UBUNTU_HOST="${AI_UBUNTU_HOST:-$UBUNTU_HOST}"
@@ -26,7 +47,12 @@ export AI_UBUNTU_USER="${AI_UBUNTU_USER:-zhou}"
 export AI_PC_MAC_ADDRESS="${AI_PC_MAC_ADDRESS:-74:56:3c:3f:2a:4d}"
 [ -z "$AI_PC_MAC_ADDRESS" ] && export AI_PC_MAC_ADDRESS="74:56:3c:3f:2a:4d"
 UBUNTU_HOST="$AI_UBUNTU_HOST"
-export OPENAI_API_BASE="http://${UBUNTU_HOST}:8000/v1"
+export LOCAL_LLM_API_BASE="http://${UBUNTU_HOST}:8000/v1"
+if [ -n "${OPENAI_API_KEY:-}" ] && [ -n "${OPENAI_API_BASE:-}" ]; then
+  echo "[digest] 翻译通道: 本地 ${LOCAL_LLM_MODEL} + 云端 ${OPENAI_MODEL:-qwen} (${OPENAI_API_BASE})"
+else
+  echo "[digest] 翻译通道: 仅本地 ${LOCAL_LLM_MODEL}（未找到 OPENAI_API_KEY / OPENAI_API_BASE）"
+fi
 
 REMOTE_GPU="$PIPELINE_DIR/mac/scripts/remote-gpu.sh"
 REMOTE_POWER="$PIPELINE_DIR/mac/scripts/remote-power.sh"

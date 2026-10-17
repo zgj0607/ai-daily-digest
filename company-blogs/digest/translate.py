@@ -15,8 +15,6 @@ LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-OPENAI_DEFAULT_API_BASE = "https://api.openai.com/v1"
-OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 _LOCAL_BATCH = 8
 _LOCAL_CONCURRENCY = 2
 _llm_slots: threading.Semaphore | None = None
@@ -120,45 +118,72 @@ def _build_client():
         or os.environ.get("LITELLM_MASTER_KEY", "").strip()
         or LOCAL_DEFAULT_API_KEY
     )
+    cloud_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    cloud_base = os.environ.get("OPENAI_API_BASE", "").strip().rstrip("/")
+    cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    openai_base = (os.environ.get("OPENAI_API_BASE", "").strip() or OPENAI_DEFAULT_API_BASE).rstrip("/")
-    openai_model = os.environ.get("OPENAI_MODEL", "").strip() or _infer_model(openai_base)
 
-    providers: list[tuple[str, object]] = [
-        (f"本地模型 ({local_base}, model={local_model})",
-         lambda prompt: _call_openai(prompt, local_key, local_base, local_model)),
+    # 本地与云端千问同时接请求；谁当前更空闲就分给谁。云端限流后关闭该通道。
+    pool: list[tuple[str, object, bool]] = [
+        (f"本地 Qwen ({local_base}, model={local_model})",
+         lambda prompt: _call_openai(prompt, local_key, local_base, local_model),
+         False),
     ]
+    if cloud_key and cloud_base and cloud_base != local_base:
+        pool.append((
+            f"云端 Qwen ({cloud_base}, model={cloud_model or 'qwen'})",
+            lambda prompt, key=cloud_key, base=cloud_base, model=cloud_model: _call_openai(prompt, key, base, model or "qwen-plus"),
+            True,
+        ))
+    fallbacks: list[tuple[str, object]] = []
     if gemini_key:
-        providers.append(("Gemini", lambda prompt: _call_gemini(prompt, gemini_key)))
-    if openai_key:
-        providers.append(
-            (f"OpenAI 兼容接口 ({openai_base}, model={openai_model})",
-             lambda prompt: _call_openai(prompt, openai_key, openai_base, openai_model))
-        )
+        fallbacks.append(("Gemini", lambda prompt: _call_gemini(prompt, gemini_key)))
 
+    inflight = [0] * len(pool)
+    cloud_closed = {"value": False}
     lock = threading.Lock()
-    state = {"active": 0}
+    print("[translate] 翻译通道: " + " | ".join(name for name, _, _ in pool))
 
     def call(prompt: str) -> str:
-        errors: list[str] = []
-        start = state["active"]
-
         def _invoke() -> str:
-            nonlocal errors
-            for position in range(start, len(providers)):
-                name, provider = providers[position]
+            errors: list[str] = []
+            with lock:
+                order = [
+                    index for index in sorted(range(len(pool)), key=lambda item: inflight[item])
+                    if not (pool[index][2] and cloud_closed["value"])
+                ]
+            for index in order:
+                name, provider, is_cloud = pool[index]
+                with lock:
+                    if is_cloud and cloud_closed["value"]:
+                        continue
+                    inflight[index] += 1
                 try:
                     text = provider(prompt)
-                    if not text.strip():
+                    if not str(text).strip():
                         raise RuntimeError("返回内容为空")
-                    return text
+                    return str(text)
                 except Exception as exc:
                     errors.append(f"{name}: {exc}")
+                    if is_cloud and _is_rate_limited(exc):
+                        with lock:
+                            first = not cloud_closed["value"]
+                            cloud_closed["value"] = True
+                        if first:
+                            print(f"[translate] 云端千问触发限流（5小时6000次），后续改走本地模型。原因: {exc}")
+                    else:
+                        print(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
+                finally:
                     with lock:
-                        if state["active"] == position and position + 1 < len(providers):
-                            state["active"] = position + 1
-                            print(f"[translate] {name} 失败，改用 {providers[position + 1][0]}。原因: {exc}")
+                        inflight[index] -= 1
+            for name, provider in fallbacks:
+                try:
+                    text = provider(prompt)
+                    if str(text).strip():
+                        return str(text)
+                    raise RuntimeError("返回内容为空")
+                except Exception as exc:
+                    errors.append(f"{name}: {exc}")
             raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
         if _llm_slots is None:
@@ -167,6 +192,16 @@ def _build_client():
             return _invoke()
 
     return call, _LOCAL_BATCH, _LOCAL_CONCURRENCY
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    if "429" in text:
+        return True
+    return any(
+        token in text
+        for token in ("rate limit", "ratelimit", "too many requests", "throttl", "quota", "限流", "请求频率", "requestlimit")
+    )
 
 
 def _call_gemini(prompt: str, api_key: str) -> str:
@@ -217,12 +252,6 @@ def _call_openai(prompt: str, api_key: str, api_base: str, model: str) -> str:
             return text
     reasoning = message.get("reasoning_content")
     return reasoning if isinstance(reasoning, str) else ""
-
-
-def _infer_model(api_base: str) -> str:
-    if "deepseek" in api_base.lower():
-        return "deepseek-chat"
-    return OPENAI_DEFAULT_MODEL
 
 
 def _translate_blocks(blocks: list[str], call) -> list[str]:
