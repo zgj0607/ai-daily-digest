@@ -86,3 +86,26 @@ sources:
     index_url: https://www.glean.com/blog
     sitemap_url: https://www.glean.com/sitemap.xml
     include: '^https://www.glean.com/blog/[^/]+$'
+
+  - id: scale
+    name: Scale AI
+    enabled: true
+    index_url: https://scale.com/blog
+    sitemap_url: https://scale.com/blog/sitemap.xml
+    include: '^https://scale.com/blog/[^/]+$'
+
+  - id: harvey
+    name: Harvey
+    enabled: true
+    index_url: https://www.harvey.ai/blog
+    sitemap_url: https://www.harvey.ai/sitemap.xml
+    include: '^https://www.harvey.ai/blog/[^/]+$'
+    exclude:
+      - '^https://www.harvey.ai/blog/author(/|$)'
+
+  - id: cohere
+    name: Cohere
+    enabled: true
+    index_url: https://cohere.com/blog
+    sitemap_url: https://cohere.com/sitemap.xml
+    include: '^https://cohere.com/blog/[^/]+$'
