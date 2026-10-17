@@ -548,24 +548,66 @@ function isRateLimited(reason: string): boolean {
   return /429|rate limit|ratelimit|too many requests|throttl|quota|限流|请求频率|requestlimit/i.test(reason);
 }
 
-/** 剪藏翻译：本地 Qwen 与云端千问按空闲程度同时接请求。云端限流后关闭该通道。 */
+const PER_MODEL_CONCURRENCY = 3;
+
+function createLimiter(limit: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return {
+    get active() { return active; },
+    async acquire(): Promise<void> {
+      if (active < limit) {
+        active += 1;
+        return;
+      }
+      await new Promise<void>(resolve => waiters.push(resolve));
+    },
+    release(): void {
+      const next = waiters.shift();
+      if (next) {
+        next();
+        return;
+      }
+      active -= 1;
+    },
+  };
+}
+
+/** 剪藏翻译：本地与云端各 3 路并发。云端限流后关闭该通道。 */
 function createClippingTranslateClient(backends: TranslateBackend[], fallback: AIClient): AIClient {
   const pool = backends.filter(item => item.apiKey && item.apiBase && item.model);
   if (!pool.length) return fallback;
-  const inflight = pool.map(() => 0);
+  const limiters = pool.map(() => createLimiter(PER_MODEL_CONCURRENCY));
   let cloudClosed = false;
-  console.log(`[digest] 剪藏翻译通道: ${pool.map(item => item.name).join(' | ')}`);
+  console.log(`[digest] 剪藏翻译通道: ${pool.map(item => item.name).join(' | ')}；每个模型 ${PER_MODEL_CONCURRENCY} 并发`);
+
+  async function reserve(exclude: Set<number>): Promise<number | null> {
+    while (true) {
+      const opened = pool
+        .map((_, index) => index)
+        .filter(index => !exclude.has(index) && !(pool[index]!.cloud && cloudClosed))
+        .sort((a, b) => limiters[a]!.active - limiters[b]!.active);
+      if (!opened.length) return null;
+      const free = opened.find(index => limiters[index]!.active < PER_MODEL_CONCURRENCY);
+      const index = free ?? opened[0]!;
+      await limiters[index]!.acquire();
+      if (pool[index]!.cloud && cloudClosed) {
+        limiters[index]!.release();
+        continue;
+      }
+      return index;
+    }
+  }
+
   return {
     async call(prompt: string): Promise<string> {
-      const order = pool
-        .map((_, index) => index)
-        .filter(index => !(pool[index]!.cloud && cloudClosed))
-        .sort((a, b) => inflight[a]! - inflight[b]!);
       const errors: string[] = [];
-      for (const index of order) {
+      const tried = new Set<number>();
+      while (true) {
+        const index = await reserve(tried);
+        if (index === null) break;
+        tried.add(index);
         const backend = pool[index]!;
-        if (backend.cloud && cloudClosed) continue;
-        inflight[index]! += 1;
         try {
           const text = await callOpenAICompatible(prompt, backend.apiKey, backend.apiBase, backend.model);
           if (!text.trim()) throw new Error('返回内容为空');
@@ -582,7 +624,7 @@ function createClippingTranslateClient(backends: TranslateBackend[], fallback: A
             console.warn(`[digest] ${backend.name} 翻译失败，改试其他通道。原因: ${reason}`);
           }
         } finally {
-          inflight[index]! -= 1;
+          limiters[index]!.release();
         }
       }
       try {

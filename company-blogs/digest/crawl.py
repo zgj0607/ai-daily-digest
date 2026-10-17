@@ -102,10 +102,11 @@ def run(
     translator = Translator.from_env()
     configure_llm_concurrency(settings.llm_concurrency)
     crawl_workers = settings.article_concurrency
-    translate_workers = settings.llm_concurrency
+    translate_workers = settings.llm_concurrency * max(1, translator.channels)
     print(
         f"[digest] 流水线: 发现={settings.source_concurrency}, "
-        f"爬取={crawl_workers}, 翻译={translate_workers}, llm={settings.llm_concurrency}"
+        f"爬取={crawl_workers}, 翻译线程={translate_workers}"
+        f"（每个模型 {settings.llm_concurrency} 并发，共 {translator.channels} 个模型）"
     )
 
     reports = {s.id: SourceReport(s.id, s.name, 0, 0, 0) for s in sources}
@@ -148,19 +149,19 @@ def run(
         # 先续译历史未完成笔记（有上限，避免拖垮本次关机窗口）
         backlog = state.needs_translate(limit=50)
         for row in backlog:
-                source = source_by_id.get(row.source_id)
-                name = source.name if source else row.source_id
-                translate_q.put(
-                    SavedArticle(
-                        source_id=row.source_id,
-                        source_name=name,
-                        title=row.title,
-                        url=row.url,
-                        published=row.published,
-                        description="",
-                        filepath=Path(row.filepath),
-                    )
+            source = source_by_id.get(row.source_id)
+            name = source.name if source else row.source_id
+            translate_q.put(
+                SavedArticle(
+                    source_id=row.source_id,
+                    source_name=name,
+                    title=row.title,
+                    url=row.url,
+                    published=row.published,
+                    description="",
+                    filepath=Path(row.filepath),
                 )
+            )
 
         with ThreadPoolExecutor(max_workers=settings.source_concurrency) as pool:
             futures = {pool.submit(_discover_source, state, fetcher, source): source for source in sources}

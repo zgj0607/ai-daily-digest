@@ -17,13 +17,13 @@ LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 _LOCAL_BATCH = 8
 _LOCAL_CONCURRENCY = 2
-_llm_slots: threading.Semaphore | None = None
+_channel_limit = 3
 
 
 def configure_llm_concurrency(limit: int) -> None:
-    """限制全局同时进行的 LLM 请求数（跨文章并行时生效）。"""
-    global _llm_slots
-    _llm_slots = threading.Semaphore(max(1, limit))
+    """每个模型各自的并发上限。本地与云端分开计数。"""
+    global _channel_limit
+    _channel_limit = max(1, limit)
 
 _CN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 _LETTERS = re.compile(
@@ -38,16 +38,23 @@ class _Block:
 
 
 class Translator:
-    def __init__(self, call, translate_batch: int = _LOCAL_BATCH, translate_concurrency: int = _LOCAL_CONCURRENCY) -> None:
+    def __init__(
+        self,
+        call,
+        translate_batch: int = _LOCAL_BATCH,
+        translate_concurrency: int = _LOCAL_CONCURRENCY,
+        channels: int = 1,
+    ) -> None:
         self._call = call
         self.translate_batch = translate_batch
         self.translate_concurrency = translate_concurrency
+        self.channels = channels
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Translator:
         _load_env_file(env_file or PROJECT_ROOT / ".env")
-        call, batch, concurrency = _build_client()
-        return cls(call, batch, concurrency)
+        call, batch, concurrency, channels = _build_client()
+        return cls(call, batch, concurrency, channels)
 
     def complete(self, prompt: str) -> str:
         """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
@@ -141,57 +148,72 @@ def _build_client():
 
     inflight = [0] * len(pool)
     cloud_closed = {"value": False}
-    lock = threading.Lock()
+    cond = threading.Condition()
     print("[translate] 翻译通道: " + " | ".join(name for name, _, _ in pool))
 
+    def _opened(exclude: set[int]) -> list[int]:
+        return [
+            index
+            for index in range(len(pool))
+            if index not in exclude and not (pool[index][2] and cloud_closed["value"])
+        ]
+
+    def _reserve(exclude: set[int]) -> int | None:
+        with cond:
+            while True:
+                opened = _opened(exclude)
+                if not opened:
+                    return None
+                opened.sort(key=lambda index: inflight[index])
+                for index in opened:
+                    if inflight[index] < _channel_limit:
+                        inflight[index] += 1
+                        return index
+                cond.wait()
+
+    def _release(index: int) -> None:
+        with cond:
+            inflight[index] -= 1
+            cond.notify_all()
+
     def call(prompt: str) -> str:
-        def _invoke() -> str:
-            errors: list[str] = []
-            with lock:
-                order = [
-                    index for index in sorted(range(len(pool)), key=lambda item: inflight[item])
-                    if not (pool[index][2] and cloud_closed["value"])
-                ]
-            for index in order:
-                name, provider, is_cloud = pool[index]
-                with lock:
-                    if is_cloud and cloud_closed["value"]:
-                        continue
-                    inflight[index] += 1
-                try:
-                    text = provider(prompt)
-                    if not str(text).strip():
-                        raise RuntimeError("返回内容为空")
-                    return str(text)
-                except Exception as exc:
-                    errors.append(f"{name}: {exc}")
-                    if is_cloud and _is_rate_limited(exc):
-                        with lock:
-                            first = not cloud_closed["value"]
-                            cloud_closed["value"] = True
-                        if first:
-                            print(f"[translate] 云端千问触发限流（5小时6000次），后续改走本地模型。原因: {exc}")
-                    else:
-                        print(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
-                finally:
-                    with lock:
-                        inflight[index] -= 1
-            for name, provider in fallbacks:
-                try:
-                    text = provider(prompt)
-                    if str(text).strip():
-                        return str(text)
+        errors: list[str] = []
+        tried: set[int] = set()
+        while True:
+            index = _reserve(tried)
+            if index is None:
+                break
+            tried.add(index)
+            name, provider, is_cloud = pool[index]
+            try:
+                text = provider(prompt)
+                if not str(text).strip():
                     raise RuntimeError("返回内容为空")
-                except Exception as exc:
-                    errors.append(f"{name}: {exc}")
-            raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
+                return str(text)
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+                if is_cloud and _is_rate_limited(exc):
+                    with cond:
+                        first = not cloud_closed["value"]
+                        cloud_closed["value"] = True
+                        cond.notify_all()
+                    if first:
+                        print(f"[translate] 云端千问触发限流（5小时6000次），后续改走本地模型。原因: {exc}")
+                else:
+                    print(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
+            finally:
+                _release(index)
+        for name, provider in fallbacks:
+            try:
+                text = provider(prompt)
+                if str(text).strip():
+                    return str(text)
+                raise RuntimeError("返回内容为空")
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+        raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
-        if _llm_slots is None:
-            return _invoke()
-        with _llm_slots:
-            return _invoke()
-
-    return call, _LOCAL_BATCH, _LOCAL_CONCURRENCY
+    return call, _LOCAL_BATCH, _LOCAL_CONCURRENCY, len(pool)
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
