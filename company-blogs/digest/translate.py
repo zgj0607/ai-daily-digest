@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from digest.config import PROJECT_ROOT
+from digest.ui import board
 
 LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
@@ -99,10 +100,10 @@ class Translator:
 
         if not translations:
             if failed:
-                print(f"[translate] 翻译失败（{failed} 段未译出），保留原文")
+                board.log_translate(f"[translate] 翻译失败（{failed} 段未译出），保留原文")
             return markdown
         if failed:
-            print(f"[translate] 警告: {failed} 个段落未译出，已译段落保留双语，其余保留原文")
+            board.log_translate(f"[translate] 警告: {failed} 个段落未译出，已译段落保留双语，其余保留原文")
 
         parts: list[str] = []
         for index, block in enumerate(blocks):
@@ -198,9 +199,9 @@ def _build_client():
                         cloud_closed["value"] = True
                         cond.notify_all()
                     if first:
-                        print(f"[translate] 云端千问触发限流（5小时6000次），后续改走本地模型。原因: {exc}")
+                        board.log_translate(f"[translate] 云端千问触发限流（5小时6000次），后续改走本地模型。原因: {exc}")
                 else:
-                    print(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
+                    board.log_translate(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
             finally:
                 _release(index)
         for name, provider in fallbacks:

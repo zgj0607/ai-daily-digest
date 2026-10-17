@@ -25,6 +25,7 @@ from digest.insight import enrich_insights
 from digest.report import SavedArticle, SourceReport, excerpt_from_body, write_blog_report
 from digest.state import ArticleRow, State
 from digest.translate import Translator, configure_llm_concurrency
+from digest.ui import board
 
 
 @dataclass
@@ -39,10 +40,67 @@ class _Item:
 _TRANSLATE_STOP = object()
 
 
-class _Progress:
-    """爬取与翻译的本次总量和完成数。发现结束前只计数，之后每变一次打印一行。"""
+class _View:
+    """固定在顶部的整体进展。交互终端里由面板重绘，否则逐行打印。"""
 
-    def __init__(self) -> None:
+    def __init__(self, pipeline: str) -> None:
+        self.pipeline = pipeline
+        self.plan_lines = ["正在发现文章链接…"]
+        self.progress = "爬取 — | 翻译 —"
+        self.discover = "发现 0/0"
+        self.discover_done = 0
+        self.discover_total = 0
+        self._lock = threading.Lock()
+
+    def _lines(self) -> list[str]:
+        return [self.pipeline, *self.plan_lines, self.progress, self.discover]
+
+    def refresh(self) -> None:
+        with self._lock:
+            lines = self._lines()
+        board.set_header(lines)
+
+    def set_plan(self, *lines: str) -> None:
+        with self._lock:
+            self.plan_lines = list(lines) or [""]
+            snapshot = self._lines()
+        board.set_header(snapshot)
+        if not board.live:
+            for line in lines:
+                print(line, flush=True)
+
+    def set_progress(self, text: str) -> None:
+        with self._lock:
+            self.progress = text
+            snapshot = self._lines()
+        board.set_header(snapshot)
+        if not board.live:
+            print(text, flush=True)
+
+    def discover_begin(self, name: str) -> None:
+        with self._lock:
+            self.discover = f"发现 {self.discover_done}/{self.discover_total} · 正在查看 {name}"
+            snapshot = self._lines()
+        board.set_header(snapshot)
+        if not board.live:
+            print(f"开始发现 {name}", flush=True)
+
+    def discover_end(self, name: str, count: int, error: str) -> None:
+        with self._lock:
+            self.discover_done += 1
+            detail = f"{name} 失败 {error}" if error else f"{name} {count} 篇"
+            self.discover = f"发现 {self.discover_done}/{self.discover_total} · {detail}"
+            snapshot = self._lines()
+        board.set_header(snapshot)
+        if not board.live:
+            print(f"[{name}] 发现失败 {error}" if error else f"[{name}] 发现 {count} 篇", flush=True)
+
+
+class _Progress:
+    """爬取与翻译的本次总量和完成数。"""
+
+    def __init__(self, view: _View) -> None:
+        self.view = view
         self.ready = False
         self.crawl_total = 0
         self.crawl_done = 0
@@ -80,12 +138,11 @@ class _Progress:
             return
         crawl_fail = self.crawl_done - self.crawl_ok
         translate_fail = self.translate_done - self.translate_ok
-        print(
-            f"[digest] 进度 爬取 {self.crawl_done}/{self.crawl_total}"
+        self.view.set_progress(
+            f"进度 爬取 {self.crawl_done}/{self.crawl_total}"
             f"（成功 {self.crawl_ok}，失败 {crawl_fail}）"
             f" | 翻译 {self.translate_done}/{self.translate_total}"
-            f"（成功 {self.translate_ok}，失败 {translate_fail}）",
-            flush=True,
+            f"（成功 {self.translate_ok}，失败 {translate_fail}）"
         )
 
 
@@ -103,11 +160,14 @@ def run(
     configure_llm_concurrency(settings.llm_concurrency)
     crawl_workers = settings.article_concurrency
     translate_workers = settings.llm_concurrency * max(1, translator.channels)
-    print(
-        f"[digest] 流水线: 发现={settings.source_concurrency}, "
+    pipeline = (
+        f"流水线: 发现={settings.source_concurrency}, "
         f"爬取={crawl_workers}, 翻译线程={translate_workers}"
         f"（每个模型 {settings.llm_concurrency} 并发，共 {translator.channels} 个模型）"
     )
+    print(f"[digest] {pipeline}")
+    view = _View(pipeline)
+    progress = _Progress(view)
 
     reports = {s.id: SourceReport(s.id, s.name, 0, 0, 0) for s in sources}
     this_run: list[SavedArticle] = []
@@ -115,7 +175,6 @@ def run(
     translated_lock = threading.Lock()
     translated_ok = 0
     translated_fail = 0
-    progress = _Progress()
 
     def translate_loop() -> None:
         nonlocal translated_ok, translated_fail
@@ -129,12 +188,12 @@ def run(
                     _translate_saved(item, translator, state)
                     with translated_lock:
                         translated_ok += 1
-                    print(f"[{item.source_id}] 已翻译 {item.filepath.name}", flush=True)
+                    board.log_translate(f"[{item.source_id}] 已翻译 {item.filepath.name}")
                     progress.note_translate(True)
                 except Exception as exc:
                     with translated_lock:
                         translated_fail += 1
-                    print(f"[{item.source_id}] 翻译失败（保留原文）{item.filepath.name}: {exc}", flush=True)
+                    board.log_translate(f"[{item.source_id}] 翻译失败（保留原文）{item.filepath.name}: {exc}")
                     progress.note_translate(False)
             finally:
                 translate_q.task_done()
@@ -145,6 +204,9 @@ def run(
     for _ in range(translate_workers):
         translate_pool.submit(translate_loop)
 
+    view.discover_total = len(sources)
+    view.refresh()
+    board.start()
     try:
         # 先续译历史未完成笔记（有上限，避免拖垮本次关机窗口）
         backlog = state.needs_translate(limit=50)
@@ -164,17 +226,18 @@ def run(
             )
 
         with ThreadPoolExecutor(max_workers=settings.source_concurrency) as pool:
-            futures = {pool.submit(_discover_source, state, fetcher, source): source for source in sources}
+            futures = {
+                pool.submit(_discover_source, state, fetcher, source, view): source for source in sources
+            }
             for future in as_completed(futures):
                 source = futures[future]
                 try:
                     count, error = future.result()
                     reports[source.id].discovered = count
                     reports[source.id].error = error
-                    print(f"[{source.id}] 发现失败 {error}" if error else f"[{source.id}] 发现 {count} 篇")
                 except Exception as exc:
                     reports[source.id].error = str(exc)
-                    print(f"[{source.id}] 发现失败 {exc}")
+                    view.discover_end(source.name, 0, str(exc))
 
         jobs: list[tuple[Source, ArticleRow]] = []
         for source in sources:
@@ -189,14 +252,10 @@ def run(
         if untranslated_n > len(backlog):
             backlog_note += f"（库内未译 {untranslated_n} 篇，本次最多续译 {len(backlog)} 篇）"
         limit_note = f"，每源上限 {limit} 篇" if limit is not None else ""
-        print(
-            f"[digest] 数据库比对: 已爬取 {saved_n} 篇，已翻译 {translated_n} 篇",
-            flush=True,
-        )
-        print(
-            f"[digest] 本次需要爬取 {need_crawl} 篇{limit_note}，需要翻译 {need_translate} 篇"
+        view.set_plan(
+            f"数据库比对: 已爬取 {saved_n} 篇，已翻译 {translated_n} 篇",
+            f"本次需要爬取 {need_crawl} 篇{limit_note}，需要翻译 {need_translate} 篇"
             f"（{backlog_note}，新爬取 {need_crawl} 篇落盘后翻译）",
-            flush=True,
         )
         progress.arm(need_crawl, need_translate)
         if jobs:
@@ -213,27 +272,28 @@ def run(
                             reports[source.id].saved += 1
                             this_run.append(saved)
                             translate_q.put(saved)
-                            print(f"[{source.id}] 已落盘 {message}", flush=True)
+                            board.log_crawl(f"[{source.id}] 已落盘 {message}")
                             progress.note_crawl(True)
                         else:
                             reports[source.id].failed += 1
-                            print(f"[{source.id}] 爬取失败 {row.url}: {message}", flush=True)
+                            board.log_crawl(f"[{source.id}] 爬取失败 {row.url}: {message}")
                             progress.note_crawl(False)
                     except Exception as exc:
                         reports[source.id].failed += 1
                         state.mark_failed(source.id, row.url, str(exc))
-                        print(f"[{source.id}] 爬取失败 {row.url}: {exc}", flush=True)
+                        board.log_crawl(f"[{source.id}] 爬取失败 {row.url}: {exc}")
                         progress.note_crawl(False)
 
         for source in sources:
             if not reports[source.id].error:
                 state.finish_source(source.id, bootstrapped=limit is None, error="")
     finally:
-        print("[digest] 等待翻译队列清空…")
+        view.set_plan("等待翻译队列清空…")
         translate_q.join()
         for _ in range(translate_workers):
             translate_q.put(_TRANSLATE_STOP)
         translate_pool.shutdown(wait=True)
+        board.stop()
         fetcher.close()
         state.close()
 
@@ -290,13 +350,14 @@ def show_status(settings: Settings) -> int:
     return 0
 
 
-def _discover_source(state: State, fetcher: Fetcher, source: Source) -> tuple[int, str]:
+def _discover_source(state: State, fetcher: Fetcher, source: Source, view: _View) -> tuple[int, str]:
     state.ensure_source(source.id)
-    print(f"开始发现 {source.name}")
+    view.discover_begin(source.name)
     try:
         found = _discover(source, fetcher)
     except Exception as exc:
         state.finish_source(source.id, bootstrapped=False, error=str(exc))
+        view.discover_end(source.name, 0, str(exc))
         return 0, str(exc)
 
     for item in found.values():
@@ -308,6 +369,7 @@ def _discover_source(state: State, fetcher: Fetcher, source: Source) -> tuple[in
             hint_kind=item.hint_kind or ("sitemap" if item.lastmod else ""),
         )
     state.commit()
+    view.discover_end(source.name, len(found), "")
     return len(found), ""
 
 
@@ -359,7 +421,7 @@ def _translate_saved(article: SavedArticle, translator: Translator, state: State
         bilingual = translator.add_bilingual(body)
     except Exception as exc:
         # 翻译失败保留原文，仍标记为已处理以免死循环；needs_translate 不再捡起
-        print(f"[{article.source_id}] 翻译异常，保留原文: {exc}")
+        board.log_translate(f"[{article.source_id}] 翻译异常，保留原文: {exc}")
         state.mark_translated(article.source_id, article.url)
         return
     if bilingual.strip() != body.strip():
