@@ -238,7 +238,11 @@ def run(
         for source in sources:
             if reports[source.id].error:
                 continue
-            jobs.extend((source, row) for row in state.pending(source.id, settings.max_attempts, limit))
+            for row in state.pending(source.id, settings.max_attempts, limit):
+                if source.accepts(row.url):
+                    jobs.append((source, row))
+                else:
+                    state.skip(source.id, row.url, "短链接仅为重定向，改抓规范地址")
 
         saved_n, translated_n, _ = state.library_counts([s.id for s in sources])
         need_crawl = len(jobs)
@@ -375,15 +379,15 @@ def _crawl_article(
 ) -> tuple[bool, str, SavedArticle | None]:
     """只负责抓取并写入 Obsidian 原文，不翻译。"""
     try:
-        html = fetcher.text(row.url)
-        article = extract_article(html, row.url, row.published, row.hint_kind)
+        html, page_url = fetcher.text_resolved(row.url)
+        article = extract_article(html, page_url, row.published, row.hint_kind)
         if len(article.body) < 80:
             raise RuntimeError("正文过短")
         if not article.title:
             article.title = row.title or article.title
         description = excerpt_from_body(article.body, article.description)
-        article.body = absolutize_images(article.body, row.url)
-        path = write_markdown(settings.output_dir, source.name, article, row.url)
+        article.body = absolutize_images(article.body, page_url)
+        path = write_markdown(settings.output_dir, source.name, article, page_url)
         published = to_iso(article.published)
         state.mark_saved(source.id, row.url, article.title, published, str(path))
         saved = SavedArticle(

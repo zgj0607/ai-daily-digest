@@ -125,7 +125,7 @@ class State:
         sql = """
             SELECT * FROM articles
             WHERE source_id = ?
-              AND status != 'saved'
+              AND status IN ('pending', 'failed')
               AND attempts < ?
             ORDER BY CASE WHEN published = '' THEN 1 ELSE 0 END, published DESC, url
         """
@@ -226,6 +226,19 @@ class State:
         with self._lock:
             rows = self.conn.execute(sql, params).fetchall()
         return [self._article(row) for row in rows]
+
+    def skip(self, source_id: str, url: str, reason: str) -> None:
+        """不再抓取的地址（例如只做跳转的短链接）。"""
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE articles
+                SET status = 'skipped', error = ?, updated_at = ?
+                WHERE source_id = ? AND url = ? AND status != 'saved'
+                """,
+                (reason[:500], utc_now(), source_id, url),
+            )
+            self.conn.commit()
 
     def mark_failed(self, source_id: str, url: str, error: str) -> None:
         with self._lock:

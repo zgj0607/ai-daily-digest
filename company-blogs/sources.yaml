@@ -329,7 +329,8 @@ sources:
     enabled: true
     index_url: https://openrouter.ai/blog/
     sitemap_url: https://openrouter.ai/blog/sitemap-0.xml
-    include: '^https://openrouter.ai/blog/[^/]+$'
+    # 短链接 /blog/slug 只返回 meta refresh，正文在分类路径下
+    include: '^https://openrouter\.ai/blog/(?:announcements|insights|tutorials|case-studies)/[^/]+$'
 
   - id: google-research
     name: Google Research

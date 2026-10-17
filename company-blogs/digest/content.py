@@ -204,6 +204,10 @@ def _body(html: str, url: str) -> str:
         huggingface = _huggingface_body(html)
         if len(huggingface) >= 80:
             return huggingface
+    if "cohere.com/blog/" in url:
+        cohere = _cohere_body(html)
+        if len(cohere) >= 80:
+            return cohere
     if "decagon.ai/blog/" in url:
         return _decagon_body(html)
     focused = _focused_html(html, url)
@@ -236,6 +240,48 @@ def _focused_html(html: str, url: str) -> str:
     soup = BeautifulSoup(html, "lxml")
     article = soup.find("article")
     return f"<!DOCTYPE html><html><body>{article}</body></html>" if article else html
+
+
+_NEXT_PUSH = re.compile(r"self\.__next_f\.push\(\[1,(.*?)\]\)\s*</script>", re.S)
+_GHOST_HTML_REF = re.compile(r'ghostBlogData"\s*:\s*\{.*?"html"\s*:\s*"\$([0-9a-f]+)"')
+_FLIGHT_TAIL = re.compile(r"(?<=[>])\s*[0-9a-f]+:\[")
+
+
+def _cohere_body(html: str) -> str:
+    """2026-03 及更早的 Cohere 文把正文放在 Ghost HTML 的 flight 文本块里，静态页面只有导语。"""
+    raw = _next_flight(html)
+    match = _GHOST_HTML_REF.search(raw)
+    if not match:
+        return ""
+    fragment = _flight_text(raw, match.group(1))
+    if not fragment.lstrip().startswith("<"):
+        return ""
+    soup = BeautifulSoup(fragment, "lxml")
+    for tag in soup.find_all(["svg", "script", "style"]):
+        tag.decompose()
+    node = soup.body or soup
+    return _clean_body(markdownify(str(node), heading_style="ATX", bullets="-"))
+
+
+def _next_flight(html: str) -> str:
+    parts: list[str] = []
+    for match in _NEXT_PUSH.finditer(html):
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, str):
+            parts.append(payload)
+    return "".join(parts)
+
+
+def _flight_text(raw: str, row_id: str) -> str:
+    match = re.search(rf"(?:^|\n){re.escape(row_id)}:T([0-9a-f]+),", raw)
+    if not match:
+        return ""
+    text = raw[match.end() : match.end() + int(match.group(1), 16)]
+    cut = _FLIGHT_TAIL.search(text)
+    return text[: cut.start()] if cut else text
 
 
 def _huggingface_body(html: str) -> str:

@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+import re
 import threading
 import time
+from urllib.parse import urljoin
 
 import requests
+
+# OpenRouter 等站点对短链接返回 200 + meta refresh，而不是 HTTP 重定向。
+_META_REFRESH = re.compile(
+    r"""<meta\b[^>]*http-equiv=["']refresh["'][^>]*content=["'][^"']*?url=([^"'\s>]+)""",
+    re.I,
+)
+_META_REFRESH_REV = re.compile(
+    r"""<meta\b[^>]*content=["'][^"']*?url=([^"'\s>]+)[^"']*["'][^>]*http-equiv=["']refresh["']""",
+    re.I,
+)
 
 
 class Fetcher:
@@ -71,10 +83,32 @@ class Fetcher:
         raise RuntimeError(f"抓取失败 {url}: {last_error}")
 
     def text(self, url: str) -> str:
-        response = self.get(url)
-        if not response.encoding or response.encoding.lower() == "iso-8859-1":
-            response.encoding = response.apparent_encoding or "utf-8"
-        return response.text
+        html, _final = self.text_resolved(url, hops=0)
+        return html
+
+    def text_resolved(self, url: str, hops: int = 3) -> tuple[str, str]:
+        """返回 (HTML, 最终地址)。会继续打开 HTML 里的 meta refresh。"""
+        current = url
+        html = ""
+        for _ in range(hops + 1):
+            response = self.get(current)
+            if not response.encoding or response.encoding.lower() == "iso-8859-1":
+                response.encoding = response.apparent_encoding or "utf-8"
+            html = response.text
+            target = _html_redirect(html, response.url or current)
+            if not target or target.rstrip("/") == current.rstrip("/"):
+                return html, response.url or current
+            current = target
+        return html, current
 
     def bytes(self, url: str) -> bytes:
         return self.get(url).content
+
+
+def _html_redirect(html: str, base_url: str) -> str:
+    if len(html) > 20000 or "redirecting" not in html[:4000].lower():
+        return ""
+    match = _META_REFRESH.search(html) or _META_REFRESH_REV.search(html)
+    if not match:
+        return ""
+    return urljoin(base_url, match.group(1).strip())
