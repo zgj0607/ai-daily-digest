@@ -181,3 +181,184 @@ sources:
     index_url: https://ai.meta.com/blog/
     sitemap_url: https://ai.meta.com/sitemap/ai_meta_com_sitemap.xml.gz
     include: '^https://ai.meta.com/blog/[^/]+$'
+
+  - id: databricks
+    name: Databricks
+    enabled: true
+    index_url: https://www.databricks.com/blog
+    sitemap_url: https://www.databricks.com/en-blog-assets/sitemap/sitemap-0.xml
+    include: '^https://www.databricks.com/blog/[^/]+$'
+
+  - id: cursor
+    name: Cursor
+    enabled: true
+    index_url: https://cursor.com/blog
+    sitemap_url: https://cursor.com/sitemap.xml
+    include: '^https://cursor.com/blog/[^/]+$'
+
+  - id: agent-zero
+    name: Agent Zero
+    enabled: true
+    index_url: https://www.agent-zero.ai/p/articles/
+    sitemap_url: https://www.agent-zero.ai/sitemap.xml
+    include: '^https://www.agent-zero.ai/p/articles/[^/]+$'
+
+  - id: perplexity
+    name: Perplexity
+    enabled: true
+    index_url: https://www.perplexity.ai/hub/blog
+    include: '^https://www.perplexity.ai/hub/blog/[^/]+$'
+
+  - id: dify
+    name: Dify
+    enabled: true
+    index_url: https://dify.ai/blog
+    sitemap_url: https://dify.ai/sitemap-0.xml
+    include: '^https://dify.ai/blog/[^/]+$'
+
+  - id: cognition
+    name: Cognition
+    enabled: true
+    index_url: https://cognition.com/blog
+    sitemap_url: https://cognition.com/sitemap.xml
+    include: '^https://cognition.com/blog/[^/]+$'
+
+  - id: mindstudio
+    name: Mindstudio
+    enabled: true
+    index_url: https://www.mindstudio.ai/blog
+    sitemap_url: https://www.mindstudio.ai/sitemap-0.xml
+    include: '^https://www.mindstudio.ai/blog/[^/]+$'
+    exclude:
+      - '^https://www.mindstudio.ai/blog/\d+$'
+
+  - id: midjourney
+    name: Midjourney
+    enabled: true
+    index_url: https://midjourney.ing/en/blog/
+    sitemap_url: https://midjourney.ing/sitemap-0.xml
+    include: '^https://midjourney.ing/en/blog/[^/]+$'
+
+  - id: runway-research
+    name: Runway Research
+    enabled: true
+    index_url: https://runway.com/research
+    sitemap_url: https://runway.com/sitemap.xml
+    include: '^https://runway.com/research/[^/]+$'
+    exclude:
+      - '^https://runway.com/research/publications$'
+
+  - id: runway-news
+    name: Runway News
+    enabled: true
+    index_url: https://runway.com/news
+    sitemap_url: https://runway.com/sitemap.xml
+    include: '^https://runway.com/news/.+'
+    exclude:
+      - '^https://runway.com/news/(customers|company-news|safety|research|engineering|developers)$'
+
+  - id: langchain
+    name: LangChain
+    enabled: true
+    index_url: https://www.langchain.com/blog
+    sitemap_url: https://www.langchain.com/sitemap.xml
+    include: '^https://www.langchain.com/blog/[^/]+$'
+
+  - id: figure
+    name: Figure AI
+    enabled: true
+    index_url: https://www.figure.ai/news
+    include: '^https://www.figure.ai/news/[^/]+$'
+
+  - id: lovable
+    name: Lovable
+    enabled: true
+    index_url: https://lovable.dev/blog
+    sitemap_url: https://lovable.dev/sitemap/en.xml
+    include: '^https://lovable.dev/blog/[^/]+$'
+
+  - id: janitor
+    name: Janitor AI
+    enabled: true
+    index_url: https://janitorai.com/news
+    feed_url: https://janitorai.com/news/rss.xml
+    include: '^https://janitorai.com/news/(announcements|changelog)/[^/]+$'
+
+  - id: lemonade
+    name: Lemonade
+    enabled: true
+    index_url: https://www.lemonade.com/blog/
+    sitemap_url: https://www.lemonade.com/blog/post-sitemap.xml
+    include: '^https://www.lemonade.com/blog/[^/]+$'
+
+  - id: vidmuse
+    name: Vidmuse
+    enabled: true
+    index_url: https://vidmuse.ai/blog
+    include: '^https://vidmuse.ai/blog/[^/]+$'
+
+  - id: descript
+    name: Descript
+    enabled: true
+    index_url: https://www.descript.com/blog/articles
+    sitemap_url: https://www.descript.com/blog/sitemap.xml
+    include: '^https://www.descript.com/blog/article/[^/]+$'
+
+  - id: roo-code
+    name: Roo Code
+    enabled: true
+    index_url: https://blog.roocode.com/
+    sitemap_url: https://blog.roocode.com/sitemap.xml
+    include: '^https://blog.roocode.com/p/[^/]+$'
+
+  - id: tencent-adp
+    name: Tencent ADP
+    enabled: true
+    index_url: https://adp.tencent.com/zh/blog
+    sitemap_url: https://adp.tencent.com/sitemap.xml
+    include: '^https://adp.tencent.com/zh/blog/[^/]+$'
+
+  - id: crewai
+    name: CrewAI
+    enabled: true
+    index_url: https://blog.crewai.com/
+    sitemap_url: https://blog.crewai.com/sitemap-posts.xml
+    include: '^https://blog.crewai.com/[^/]+$'
+
+  - id: openrouter
+    name: OpenRouter
+    enabled: true
+    index_url: https://openrouter.ai/blog/
+    sitemap_url: https://openrouter.ai/blog/sitemap-0.xml
+    include: '^https://openrouter.ai/blog/[^/]+$'
+
+  - id: google-research
+    name: Google Research
+    enabled: true
+    index_url: https://research.google/blog/
+    feed_url: https://research.google/blog/rss/
+    include: '^https://research.google/blog/[^/]+$'
+    exclude:
+      - '^https://research.google/blog/\d{4}$'
+      - '^https://research.google/blog/rss$'
+
+  - id: deepmind
+    name: DeepMind
+    enabled: true
+    index_url: https://deepmind.google/blog/
+    sitemap_url: https://deepmind.google/sitemap.xml
+    include: '^https://deepmind.google/blog/[^/]+$'
+
+  - id: google-quantum
+    name: Google Quantum
+    enabled: true
+    index_url: https://blog.google/innovation-and-ai/models-and-research/quantum-computing/
+    sitemap_url: https://blog.google/en-us/sitemap.xml
+    include: '^https://blog.google/innovation-and-ai/models-and-research/quantum-computing/[^/]+$'
+
+  - id: google-labs
+    name: Google Labs
+    enabled: true
+    index_url: https://blog.google/innovation-and-ai/models-and-research/google-labs/
+    sitemap_url: https://blog.google/en-us/sitemap.xml
+    include: '^https://blog.google/innovation-and-ai/models-and-research/google-labs/[^/]+$'
