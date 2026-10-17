@@ -55,45 +55,39 @@ class _View:
     def _lines(self) -> list[str]:
         return [self.pipeline, *self.plan_lines, self.progress, self.discover]
 
-    def refresh(self) -> None:
+    def _publish(self, echo: list[str] | None = None) -> None:
         with self._lock:
             lines = self._lines()
         board.set_header(lines)
+        if echo and not board.live:
+            for line in echo:
+                print(line, flush=True)
+
+    def refresh(self) -> None:
+        self._publish()
 
     def set_plan(self, *lines: str) -> None:
         with self._lock:
             self.plan_lines = list(lines) or [""]
-            snapshot = self._lines()
-        board.set_header(snapshot)
-        if not board.live:
-            for line in lines:
-                print(line, flush=True)
+        self._publish(list(lines))
 
     def set_progress(self, text: str) -> None:
         with self._lock:
             self.progress = text
-            snapshot = self._lines()
-        board.set_header(snapshot)
-        if not board.live:
-            print(text, flush=True)
+        self._publish([text])
 
     def discover_begin(self, name: str) -> None:
         with self._lock:
             self.discover = f"发现 {self.discover_done}/{self.discover_total} · 正在查看 {name}"
-            snapshot = self._lines()
-        board.set_header(snapshot)
-        if not board.live:
-            print(f"开始发现 {name}", flush=True)
+        self._publish([f"开始发现 {name}"])
 
     def discover_end(self, name: str, count: int, error: str) -> None:
         with self._lock:
             self.discover_done += 1
             detail = f"{name} 失败 {error}" if error else f"{name} {count} 篇"
             self.discover = f"发现 {self.discover_done}/{self.discover_total} · {detail}"
-            snapshot = self._lines()
-        board.set_header(snapshot)
-        if not board.live:
-            print(f"[{name}] 发现失败 {error}" if error else f"[{name}] 发现 {count} 篇", flush=True)
+        message = f"[{name}] 发现失败 {error}" if error else f"[{name}] 发现 {count} 篇"
+        self._publish([message])
 
 
 class _Progress:

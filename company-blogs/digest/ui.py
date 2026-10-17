@@ -4,6 +4,7 @@ from __future__ import annotations
 import shutil
 import sys
 import threading
+import time
 from collections import deque
 
 
@@ -69,6 +70,8 @@ class Dashboard:
         self.crawl: deque[str] = deque(maxlen=400)
         self.translate: deque[str] = deque(maxlen=400)
         self._lock = threading.Lock()
+        self._last_paint = 0.0
+        self._timer: threading.Timer | None = None
 
     def start(self) -> None:
         cols, rows = shutil.get_terminal_size(fallback=(80, 24))
@@ -82,8 +85,13 @@ class Dashboard:
 
     def stop(self) -> None:
         with self._lock:
+            timer = self._timer
+            self._timer = None
+            if timer:
+                timer.cancel()
             if not self.live:
                 return
+            self._render()
             sys.stdout.write("\033[?25h\033[?1049l")
             sys.stdout.flush()
             self.live = False
@@ -105,6 +113,28 @@ class Dashboard:
                 print(text, flush=True)
                 return
             bucket.append(text)
+            self._paint(coalesce=True)
+
+    def _paint(self, coalesce: bool) -> None:
+        now = time.monotonic()
+        if not coalesce or now - self._last_paint >= 0.08:
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
+            self._last_paint = now
+            self._render()
+            return
+        if self._timer:
+            return
+        timer = threading.Timer(0.08, self._flush)
+        timer.daemon = True
+        self._timer = timer
+        timer.start()
+
+    def _flush(self) -> None:
+        with self._lock:
+            self._timer = None
+            self._last_paint = time.monotonic()
             self._render()
 
     def _render(self) -> None:

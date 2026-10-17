@@ -17,7 +17,6 @@ LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 _LOCAL_BATCH = 8
-_LOCAL_CONCURRENCY = 2
 _channel_limit = 3
 
 
@@ -39,23 +38,16 @@ class _Block:
 
 
 class Translator:
-    def __init__(
-        self,
-        call,
-        translate_batch: int = _LOCAL_BATCH,
-        translate_concurrency: int = _LOCAL_CONCURRENCY,
-        channels: int = 1,
-    ) -> None:
+    def __init__(self, call, translate_batch: int = _LOCAL_BATCH, channels: int = 1) -> None:
         self._call = call
         self.translate_batch = translate_batch
-        self.translate_concurrency = translate_concurrency
         self.channels = channels
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Translator:
         _load_env_file(env_file or PROJECT_ROOT / ".env")
-        call, batch, concurrency, channels = _build_client()
-        return cls(call, batch, concurrency, channels)
+        call, batch, channels = _build_client()
+        return cls(call, batch, channels)
 
     def complete(self, prompt: str) -> str:
         """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
@@ -214,7 +206,7 @@ def _build_client():
                 errors.append(f"{name}: {exc}")
         raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
-    return call, _LOCAL_BATCH, _LOCAL_CONCURRENCY, len(pool)
+    return call, _LOCAL_BATCH, len(pool)
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
