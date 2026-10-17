@@ -202,8 +202,8 @@ def run(
     view.refresh()
     board.start()
     try:
-        # 先续译历史未完成笔记（有上限，避免拖垮本次关机窗口）
-        backlog = state.needs_translate(limit=50)
+        # 上次没译完的笔记全部进队列，和本次新文一起翻译
+        backlog = state.needs_translate()
         for row in backlog:
             source = source_by_id.get(row.source_id)
             name = source.name if source else row.source_id
@@ -239,12 +239,10 @@ def run(
                 continue
             jobs.extend((source, row) for row in state.pending(source.id, settings.max_attempts, limit))
 
-        saved_n, translated_n, untranslated_n = state.library_counts([s.id for s in sources])
+        saved_n, translated_n, _ = state.library_counts([s.id for s in sources])
         need_crawl = len(jobs)
         need_translate = len(backlog) + need_crawl
-        backlog_note = f"未译积压纳入 {len(backlog)} 篇"
-        if untranslated_n > len(backlog):
-            backlog_note += f"（库内未译 {untranslated_n} 篇，本次最多续译 {len(backlog)} 篇）"
+        backlog_note = f"未译积压 {len(backlog)} 篇"
         limit_note = f"，每源上限 {limit} 篇" if limit is not None else ""
         view.set_plan(
             f"数据库比对: 已爬取 {saved_n} 篇，已翻译 {translated_n} 篇",
