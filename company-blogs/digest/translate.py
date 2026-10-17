@@ -53,6 +53,26 @@ class Translator:
         """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
         return self._call(prompt)
 
+    def translate_title(self, title: str) -> str:
+        """标题译成中文。已是中文或翻译失败时保留原文，供 Obsidian 文件名使用。"""
+        cleaned = re.sub(r"\s+", " ", title or "").strip()
+        if not cleaned or _is_chinese(cleaned, 0.35):
+            return cleaned
+        prompt = (
+            "你是技术编辑。将文章标题译成自然、简洁的中文。"
+            "已经是中文则原样返回。只返回标题一行，不要引号、序号或解释。\n\n"
+            + cleaned
+        )
+        try:
+            text = self.complete(prompt).strip().splitlines()[0].strip()
+        except Exception:
+            return cleaned
+        text = text.strip("\"'「」『』").strip()
+        text = re.sub(r"\s+", " ", text)
+        if not text or len(text) > 180:
+            return cleaned
+        return text
+
     def add_bilingual(self, markdown: str) -> str:
         blocks = _parse_blocks(markdown)
         all_text = "\n".join(block.content for block in blocks if block.type == "text")

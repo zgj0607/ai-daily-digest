@@ -328,6 +328,39 @@ def write_markdown(output_dir: Path, company: str, article: Article, url: str) -
     return path
 
 
+def retitle_markdown(path: Path, title: str, url: str) -> Path:
+    """把笔记文件名改成中文标题，日期前缀保持不变。"""
+    stamp = re.match(r"^(\d{8})-", path.name)
+    prefix = f"{stamp.group(1)}-" if stamp else ""
+    filename = f"{prefix}{sanitize_filename(title)}.md"
+    if path.name == filename:
+        _set_frontmatter_title(path, title)
+        return path
+    target = path.parent / filename
+    if target.exists() and target.resolve() != path.resolve():
+        digest = hashlib.sha1(url.encode()).hexdigest()[:6]
+        target = path.parent / f"{prefix}{sanitize_filename(title)}-{digest}.md"
+        if target.exists() and target.resolve() != path.resolve():
+            _set_frontmatter_title(path, title)
+            return path
+    path.rename(target)
+    _set_frontmatter_title(target, title)
+    return target
+
+
+def _set_frontmatter_title(path: Path, title: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return
+    end = text.find("\n---\n", 3)
+    if end == -1:
+        return
+    head, body = text[:end], text[end:]
+    replaced, count = re.subn(r'(?m)^title:.*$', f"title: {_quote(title)}", head, count=1)
+    if count:
+        path.write_text(replaced + body, encoding="utf-8")
+
+
 def update_markdown_body(path: Path, body: str) -> None:
     """原地改写 Obsidian 笔记正文，保留 YAML frontmatter。"""
     text = path.read_text(encoding="utf-8")

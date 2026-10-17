@@ -169,15 +169,25 @@ class State:
             )
             self.conn.commit()
 
-    def mark_translated(self, source_id: str, url: str) -> None:
+    def mark_translated(
+        self,
+        source_id: str,
+        url: str,
+        *,
+        title: str = "",
+        filepath: str = "",
+    ) -> None:
         with self._lock:
             self.conn.execute(
                 """
                 UPDATE articles
-                SET translated = 1, error = '', updated_at = ?
+                SET translated = 1, error = '',
+                    title = CASE WHEN ? != '' THEN ? ELSE title END,
+                    filepath = CASE WHEN ? != '' THEN ? ELSE filepath END,
+                    updated_at = ?
                 WHERE source_id = ? AND url = ?
                 """,
-                (utc_now(), source_id, url),
+                (title, title, filepath, filepath, utc_now(), source_id, url),
             )
             self.conn.commit()
 

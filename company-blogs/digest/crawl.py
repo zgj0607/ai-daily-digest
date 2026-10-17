@@ -16,6 +16,7 @@ from digest.content import (
     absolutize_images,
     extract_article,
     read_markdown_body,
+    retitle_markdown,
     update_markdown_body,
     write_markdown,
 )
@@ -401,13 +402,17 @@ def _crawl_article(
 
 
 def _translate_saved(article: SavedArticle, translator: Translator, state: State) -> None:
-    """读取已落盘的 Obsidian 文件，双语翻译后写回。"""
+    """读取已落盘的 Obsidian 文件，双语翻译后写回，并把文件名改成中文标题。"""
     path = article.filepath
     if not path.is_file():
         raise RuntimeError(f"文件不存在: {path}")
+    title_zh = translator.translate_title(article.title)
     body = read_markdown_body(path)
     if len(body) < 40:
-        state.mark_translated(article.source_id, article.url)
+        path = retitle_markdown(path, title_zh or article.title, article.url)
+        article.title = title_zh or article.title
+        article.filepath = path
+        state.mark_translated(article.source_id, article.url, title=article.title, filepath=str(path))
         return
     try:
         bilingual = translator.add_bilingual(body)
@@ -418,7 +423,10 @@ def _translate_saved(article: SavedArticle, translator: Translator, state: State
         return
     if bilingual.strip() != body.strip():
         update_markdown_body(path, bilingual)
-    state.mark_translated(article.source_id, article.url)
+    path = retitle_markdown(path, title_zh or article.title, article.url)
+    article.title = title_zh or article.title
+    article.filepath = path
+    state.mark_translated(article.source_id, article.url, title=article.title, filepath=str(path))
 
 
 def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
