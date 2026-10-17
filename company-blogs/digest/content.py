@@ -18,7 +18,8 @@ from digest.dates import date_only, file_stamp, parse_date
 
 _SITE_SUFFIX = re.compile(
     r"\s+(?:\||\\|[-–—])\s+(?:Hugging Face|Decagon|Sierra|Cresta|Anthropic|"
-    r"Aisera|Intercom|Yellow\.ai|Cognigy|Glean|Scale AI|Harvey|Cohere|Blog)\s*$",
+    r"Aisera|Intercom|Yellow\.ai|Cognigy|Glean|Scale AI|Harvey|Cohere|"
+    r"Kimi|Zhipu|DeepSeek|Qwen|MiniMax|StepFun|LongCat|Hunyuan|Gemini|Mistral|Meta|Blog)\s*$",
     re.IGNORECASE,
 )
 _CUT_MARKERS = re.compile(

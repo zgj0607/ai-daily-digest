@@ -109,3 +109,75 @@ sources:
     index_url: https://cohere.com/blog
     sitemap_url: https://cohere.com/sitemap.xml
     include: '^https://cohere.com/blog/[^/]+$'
+
+  - id: kimi
+    name: Kimi
+    enabled: true
+    index_url: https://www.kimi.com/blog/
+    include: '^https://www.kimi.com/blog/[^/]+$'
+
+  - id: zhipu
+    name: Zhipu
+    enabled: true
+    index_url: https://zhipuai.ai/blog/
+    sitemap_url: https://zhipuai.ai/sitemap.blog.xml
+    include: '^https://zhipuai.ai/blog/f/[^/]+$'
+
+  - id: deepseek
+    name: DeepSeek
+    enabled: true
+    index_url: https://www.deepseek.com/news
+    sitemap_url: https://www.deepseek.com/sitemap.xml
+    include: '^https://www.deepseek.com/news/[^/]+$'
+
+  - id: qwen
+    name: Qwen
+    enabled: true
+    index_url: https://qwen.ai/research
+    include: '^https://qwen.ai/research/[^/]+$'
+
+  - id: minimax
+    name: MiniMax
+    enabled: true
+    index_url: https://www.minimax.io/blog
+    include: '^https://www.minimax.io/blog/[^/]+$'
+
+  - id: stepfun
+    name: Stepfun
+    enabled: true
+    index_url: https://platform.stepfun.ai/docs/en/guides/models/overview
+    sitemap_url: https://platform.stepfun.ai/docs/sitemap.xml
+    include: '^https://platform.stepfun.ai/docs/en/guides/models/[^/]+$'
+
+  - id: longcat
+    name: LongCat
+    enabled: true
+    index_url: https://huggingface.co/meituan-longcat/papers
+    include: '^https://huggingface.co/papers/\d+\.\d+$'
+
+  - id: hunyuan
+    name: Hunyuan
+    enabled: true
+    index_url: https://hunyuan.tencent.com/research
+    include: '^https://hunyuan.tencent.com/research/[^/?]+$'
+
+  - id: gemini
+    name: Gemini
+    enabled: true
+    index_url: https://blog.google/innovation-and-ai/models-and-research/gemini-models/
+    sitemap_url: https://blog.google/en-us/sitemap.xml
+    include: '^https://blog.google/innovation-and-ai/models-and-research/gemini-models/[^/]+$'
+
+  - id: mistral
+    name: Mistral
+    enabled: true
+    index_url: https://mistral.ai/news/
+    sitemap_url: https://mistral.ai/sitemap-0.xml
+    include: '^https://mistral.ai/news/[^/]+$'
+
+  - id: meta
+    name: Meta
+    enabled: true
+    index_url: https://ai.meta.com/blog/
+    sitemap_url: https://ai.meta.com/sitemap/ai_meta_com_sitemap.xml.gz
+    include: '^https://ai.meta.com/blog/[^/]+$'

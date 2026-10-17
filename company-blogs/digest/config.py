@@ -16,6 +16,7 @@ class Source:
     enabled: bool = True
     feed_url: str = ""
     sitemap_url: str = ""
+    index_url: str = ""
     exclude: tuple[re.Pattern[str], ...] = ()
 
     def accepts(self, url: str) -> bool:
@@ -55,8 +56,8 @@ def load_settings(path: Path | None = None) -> Settings:
 
     sources: list[Source] = []
     for item in raw.get("sources") or []:
-        if not item.get("sitemap_url") and not item.get("feed_url"):
-            raise SystemExit(f"来源 {item.get('id')} 需要 sitemap_url 或 feed_url")
+        if not item.get("sitemap_url") and not item.get("feed_url") and not item.get("index_url"):
+            raise SystemExit(f"来源 {item.get('id')} 需要 sitemap_url、feed_url 或 index_url")
         include = item.get("include")
         if not include:
             raise SystemExit(f"来源 {item.get('id')} 需要 include")
@@ -68,6 +69,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 enabled=bool(item.get("enabled", True)),
                 feed_url=str(item.get("feed_url") or ""),
                 sitemap_url=str(item.get("sitemap_url") or ""),
+                index_url=str(item.get("index_url") or ""),
                 exclude=tuple(re.compile(p) for p in item.get("exclude") or []),
             )
         )

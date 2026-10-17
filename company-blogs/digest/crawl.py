@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from queue import Queue
+from urllib.parse import urljoin
 from xml.etree import ElementTree as ET
 
 from digest.config import Settings, Source
@@ -302,6 +303,11 @@ def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
             url = _normalize(url)
             if source.accepts(url):
                 items[url] = _Item(url=url, lastmod=to_iso(parse_date(lastmod)) if lastmod else "")
+    if source.index_url:
+        for url in _index_links(fetcher, source.index_url):
+            url = _normalize(url)
+            if source.accepts(url) and url not in items:
+                items[url] = _Item(url=url, hint_kind="index")
     if source.feed_url:
         for url, title, published in _feed_entries(fetcher.bytes(source.feed_url)):
             url = _normalize(url)
@@ -313,6 +319,23 @@ def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
             item.hint_kind = "feed"
             items[url] = item
     return items
+
+
+_HREF = re.compile(r"""href=["']([^"'#]+)""", re.I)
+
+
+def _index_links(fetcher: Fetcher, page_url: str) -> list[str]:
+    """从列表页抽出文章链接（sitemap 未收录时的补充）。"""
+    html = fetcher.text(page_url)
+    found: list[str] = []
+    seen: set[str] = set()
+    for href in _HREF.findall(html):
+        absolute = urljoin(page_url, href.strip())
+        if absolute in seen:
+            continue
+        seen.add(absolute)
+        found.append(absolute)
+    return found
 
 
 def _normalize(url: str) -> str:
@@ -378,4 +401,8 @@ def _feed_entries(payload: bytes) -> list[tuple[str, str, str]]:
 
 
 def _strip_bom(payload: bytes) -> bytes:
+    if payload.startswith(b"\x1f\x8b"):
+        import gzip
+
+        payload = gzip.decompress(payload)
     return payload[3:] if payload.startswith(b"\xef\xbb\xbf") else payload
