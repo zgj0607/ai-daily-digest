@@ -1,6 +1,7 @@
 """发现 URL → 并行爬取落盘 → 并行读 Obsidian 翻译（爬取与翻译流水线重叠）。"""
 from __future__ import annotations
 
+import gzip
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -265,21 +266,19 @@ def run(
                     source, row = futures[future]
                     try:
                         ok, message, saved = future.result()
-                        if ok and saved:
-                            reports[source.id].saved += 1
-                            this_run.append(saved)
-                            translate_q.put(saved)
-                            board.log_crawl(f"[{source.id}] 已落盘 {message}")
-                            progress.note_crawl(True)
-                        else:
-                            reports[source.id].failed += 1
-                            board.log_crawl(f"[{source.id}] 爬取失败 {row.url}: {message}")
-                            progress.note_crawl(False)
                     except Exception as exc:
-                        reports[source.id].failed += 1
-                        state.mark_failed(source.id, row.url, str(exc))
-                        board.log_crawl(f"[{source.id}] 爬取失败 {row.url}: {exc}")
-                        progress.note_crawl(False)
+                        ok, message, saved = False, str(exc), None
+                        state.mark_failed(source.id, row.url, message)
+                    if ok and saved:
+                        reports[source.id].saved += 1
+                        this_run.append(saved)
+                        translate_q.put(saved)
+                        board.log_crawl(f"[{source.id}] 已落盘 {message}")
+                        progress.note_crawl(True)
+                        continue
+                    reports[source.id].failed += 1
+                    board.log_crawl(f"[{source.id}] 爬取失败 {row.url}: {message}")
+                    progress.note_crawl(False)
 
         for source in sources:
             if not reports[source.id].error:
@@ -307,7 +306,9 @@ def run(
     highlights = ""
     if this_run:
         highlights = enrich_insights(
-            this_run, translator, concurrency=settings.llm_concurrency
+            this_run,
+            translator,
+            concurrency=settings.llm_concurrency * max(1, translator.channels),
         )
 
     report_path = settings.output_dir / f"{date.today().strftime('%Y%m%d')}-AI公司博客简报.md"
@@ -410,23 +411,20 @@ def _translate_saved(article: SavedArticle, translator: Translator, state: State
     path = article.filepath
     if not path.is_file():
         raise RuntimeError(f"文件不存在: {path}")
-    title_zh = translator.translate_title(article.title)
     body = read_markdown_body(path)
+    title_zh = article.title
     if len(body) < 40:
-        path = retitle_markdown(path, title_zh or article.title, article.url)
-        article.title = title_zh or article.title
-        article.filepath = path
-        state.mark_translated(article.source_id, article.url, title=article.title, filepath=str(path))
-        return
-    try:
-        bilingual = translator.add_bilingual(body)
-    except Exception as exc:
-        # 翻译失败保留原文，仍标记为已处理以免死循环；needs_translate 不再捡起
-        board.log_translate(f"[{article.source_id}] 翻译异常，保留原文: {exc}")
-        state.mark_translated(article.source_id, article.url)
-        return
-    if bilingual.strip() != body.strip():
-        update_markdown_body(path, bilingual)
+        title_zh = translator.translate_title(article.title)
+    else:
+        try:
+            title_zh, bilingual = translator.add_bilingual(body, article.title)
+        except Exception as exc:
+            # 翻译失败保留原文，仍标记为已处理以免死循环；needs_translate 不再捡起
+            board.log_translate(f"[{article.source_id}] 翻译异常，保留原文: {exc}")
+            state.mark_translated(article.source_id, article.url)
+            return
+        if bilingual.strip() != body.strip():
+            update_markdown_body(path, bilingual)
     path = retitle_markdown(path, title_zh or article.title, article.url)
     article.title = title_zh or article.title
     article.filepath = path
@@ -464,15 +462,10 @@ _HREF = re.compile(r"""href=["']([^"'#]+)""", re.I)
 def _index_links(fetcher: Fetcher, page_url: str) -> list[str]:
     """从列表页抽出文章链接（sitemap 未收录时的补充）。"""
     html = fetcher.text(page_url)
-    found: list[str] = []
-    seen: set[str] = set()
+    seen: dict[str, None] = {}
     for href in _HREF.findall(html):
-        absolute = urljoin(page_url, href.strip())
-        if absolute in seen:
-            continue
-        seen.add(absolute)
-        found.append(absolute)
-    return found
+        seen.setdefault(urljoin(page_url, href.strip()), None)
+    return list(seen)
 
 
 def _normalize(url: str) -> str:
@@ -539,7 +532,5 @@ def _feed_entries(payload: bytes) -> list[tuple[str, str, str]]:
 
 def _strip_bom(payload: bytes) -> bytes:
     if payload.startswith(b"\x1f\x8b"):
-        import gzip
-
         payload = gzip.decompress(payload)
     return payload[3:] if payload.startswith(b"\xef\xbb\xbf") else payload

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,7 @@ KIMI_DEFAULT_MODEL = "kimi-k2.6"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 _LOCAL_BATCH = 8
 _channel_limit = 3
+_HTTP = threading.local()
 
 
 def configure_llm_concurrency(limit: int) -> None:
@@ -68,20 +70,20 @@ class Translator:
             + cleaned
         )
         try:
-            text = self.complete(prompt).strip().splitlines()[0].strip()
+            text = self.complete(prompt)
         except Exception:
             return cleaned
-        text = text.strip("\"'「」『』").strip()
-        text = re.sub(r"\s+", " ", text)
-        if not text or len(text) > 180:
-            return cleaned
-        return text
+        return _accept_title(cleaned, text) or cleaned
 
-    def add_bilingual(self, markdown: str) -> str:
+    def add_bilingual(self, markdown: str, title: str = "") -> tuple[str, str]:
+        """译正文，并把需要翻译的标题放进第一批请求。返回 (中文标题, 双语正文)。"""
+        original_title = re.sub(r"\s+", " ", title or "").strip()
+        want_title = bool(original_title) and not _is_chinese(original_title, 0.35)
         blocks = _parse_blocks(markdown)
         all_text = "\n".join(block.content for block in blocks if block.type == "text")
         if not all_text.strip() or _is_chinese(all_text, 0.35):
-            return markdown
+            translated = self.translate_title(original_title) if want_title else original_title
+            return translated, markdown
 
         jobs = [
             (index, block.content)
@@ -89,12 +91,15 @@ class Translator:
             if block.type == "text" and _should_translate(block.content)
         ]
         if not jobs:
-            return markdown
+            translated = self.translate_title(original_title) if want_title else original_title
+            return translated, markdown
 
         batches = [jobs[start : start + self.translate_batch] for start in range(0, len(jobs), self.translate_batch)]
 
-        def worker(batch: list[tuple[int, str]]) -> tuple[dict[int, str], int]:
-            translated = _translate_blocks([content for _, content in batch], self._call)
+        def worker(item: tuple[int, list[tuple[int, str]]]) -> tuple[dict[int, str], int, str]:
+            batch_index, batch = item
+            carry = original_title if want_title and batch_index == 0 else ""
+            got_title, translated = _translate_blocks([content for _, content in batch], self._call, carry)
             found: dict[int, str] = {}
             missing = 0
             for (index, content), text in zip(batch, translated):
@@ -103,23 +108,36 @@ class Translator:
                     found[index] = cleaned
                 else:
                     missing += 1
-            return found, missing
+            return found, missing, got_title
 
-        # 外层已有翻译线程 + 全局 llm 信号量，批次串行避免线程扇出
-        results = [worker(batch) for batch in batches]
+        # 各批并行发给当时有空的模型；模型名额仍由 call() 按每个模型限制
+        width = min(len(batches), max(1, self.channels * _channel_limit))
+        enumerated = list(enumerate(batches))
+        if width == 1:
+            results = [worker(item) for item in enumerated]
+        else:
+            with ThreadPoolExecutor(max_workers=width) as pool:
+                results = list(pool.map(worker, enumerated))
+        title_zh = original_title
 
         translations: dict[int, str] = {}
         failed = 0
-        for found, missing in results:
+        for found, missing, got_title in results:
             translations.update(found)
             failed += missing
+            if got_title:
+                title_zh = got_title
 
         if not translations:
             if failed:
                 board.log_translate(f"[translate] 翻译失败（{failed} 段未译出），保留原文")
-            return markdown
+            if want_title and title_zh == original_title:
+                title_zh = self.translate_title(original_title)
+            return title_zh, markdown
         if failed:
             board.log_translate(f"[translate] 警告: {failed} 个段落未译出，已译段落保留双语，其余保留原文")
+        if want_title and title_zh == original_title:
+            title_zh = self.translate_title(original_title)
 
         parts: list[str] = []
         for index, block in enumerate(blocks):
@@ -128,7 +146,7 @@ class Translator:
             if translated:
                 parts.append("")
                 parts.append(translated)
-        return re.sub(r"\n{3,}", "\n\n", "\n\n".join(parts)).strip()
+        return title_zh, re.sub(r"\n{3,}", "\n\n", "\n\n".join(parts)).strip()
 
 
 def _build_client():
@@ -153,7 +171,7 @@ def _build_client():
     kimi_model = os.environ.get("MOONSHOT_MODEL", "").strip() or KIMI_DEFAULT_MODEL
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # 每个模型各自最多 _channel_limit 篇同时在译。某个云端失败只关闭该模型，其余云端和本地继续。
+    # 每个模型各自最多 _channel_limit 篇同时在译。限流只关闭该模型；超时、空返回和 5xx 只改试其余模型。
     pool: list[tuple[str, object, bool]] = [
         (f"本地 Qwen ({local_base}, model={local_model})",
          lambda prompt: _call_openai(prompt, local_key, local_base, local_model),
@@ -162,7 +180,9 @@ def _build_client():
     if cloud_key and cloud_base and cloud_base != local_base:
         pool.append((
             f"云端 Qwen ({cloud_base}, model={cloud_model or 'qwen'})",
-            lambda prompt, key=cloud_key, base=cloud_base, model=cloud_model: _call_openai(prompt, key, base, model or "qwen-plus"),
+            lambda prompt, key=cloud_key, base=cloud_base, model=cloud_model: _call_openai(
+                prompt, key, base, model or "qwen-plus", extra={"enable_thinking": False},
+            ),
             True,
         ))
     if deepseek_key and deepseek_base != local_base:
@@ -199,7 +219,7 @@ def _build_client():
         "[translate] 每个模型同时 "
         f"{_channel_limit} 篇: "
         + " | ".join(name for name, _, _ in pool)
-        + "。单个云端失败只关闭该模型"
+        + "。限流只关闭该模型，其他失败改试其余模型"
     )
 
     def _opened(exclude: set[int]) -> list[int]:
@@ -250,9 +270,9 @@ def _build_client():
                 return _invoke(index, prompt)
             except Exception as exc:
                 errors.append(f"{name}: {exc}")
-                if is_cloud:
+                if is_cloud and _is_rate_limited(exc):
                     if _close_one(index):
-                        board.log_translate(f"[translate] {name} 失败，已关闭该模型，其余模型继续。原因: {exc}")
+                        board.log_translate(f"[translate] {name} 触发限流，已关闭该模型，其余模型继续。原因: {exc}")
                 else:
                     board.log_translate(f"[translate] {name} 失败，改试其他模型。原因: {exc}")
             finally:
@@ -270,8 +290,35 @@ def _build_client():
     return call, _LOCAL_BATCH, len(pool)
 
 
+def _http() -> requests.Session:
+    session = getattr(_HTTP, "session", None)
+    if session is None:
+        session = requests.Session()
+        _HTTP.session = session
+    return session
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    if "429" in text:
+        return True
+    return any(
+        token in text
+        for token in ("rate limit", "ratelimit", "too many requests", "throttl", "quota", "限流", "请求频率", "requestlimit")
+    )
+
+
+def _accept_title(original: str, translated: str) -> str:
+    text = (translated or "").strip().splitlines()[0].strip() if translated else ""
+    text = text.strip("\"'「」『』").strip()
+    text = re.sub(r"\s+", " ", text)
+    if not text or len(text) > 180 or text == original:
+        return ""
+    return text
+
+
 def _call_gemini(prompt: str, api_key: str) -> str:
-    response = requests.post(
+    response = _http().post(
         GEMINI_API_URL,
         params={"key": api_key},
         json={
@@ -312,7 +359,7 @@ def _call_openai(
         body["chat_template_kwargs"] = {"enable_thinking": False}
     if extra:
         body.update(extra)
-    response = requests.post(
+    response = _http().post(
         f"{api_base}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json=body,
@@ -336,25 +383,40 @@ def _call_openai(
     return reasoning if isinstance(reasoning, str) else ""
 
 
-def _translate_blocks(blocks: list[str], call) -> list[str]:
-    if not blocks:
-        return []
+def _translate_blocks(blocks: list[str], call, title: str = "") -> tuple[str, list[str]]:
+    if not blocks and not title:
+        return "", []
+    title_line = f"标题：{title}\n\n" if title else ""
+    schema = '{"title":"...","translations":[{"index":0,"text":"..."}]}' if title else '{"translations":[{"index":0,"text":"..."}]}'
+    title_rule = "同时把标题译成自然、简洁的中文，写入 title。已经是中文则原样返回，只要一行。\n" if title else ""
     prompt = (
-        "你是沉浸式翻译助手。将以下非中文 Markdown 段落逐条译为中文。已是中文的返回空字符串 \"\"。保留链接和格式。只返回 JSON：\n"
-        '{"translations":[{"index":0,"text":"..."}]}\n\n'
+        "你是沉浸式翻译助手。将以下非中文 Markdown 段落逐条译为中文。已是中文的返回空字符串 \"\"。保留链接和格式。"
+        + title_rule
+        + "只返回 JSON：\n"
+        + schema
+        + "\n\n"
+        + title_line
         + "\n\n".join(f"--- {index} ---\n{block}" for index, block in enumerate(blocks))
     )
-    try:
-        parsed = parse_llm_json(call(prompt))
+    best_title = ""
+    for _ in range(2):
+        try:
+            parsed = parse_llm_json(call(prompt))
+        except Exception:
+            continue
         output = [""] * len(blocks)
         for item in parsed.get("translations") or []:
             index = item.get("index")
             text = item.get("text")
             if isinstance(index, int) and 0 <= index < len(blocks) and text:
                 output[index] = str(text).strip()
-        return output
-    except Exception:
-        return [""] * len(blocks)
+        if title:
+            accepted = _accept_title(title, str(parsed.get("title") or ""))
+            if accepted:
+                best_title = accepted
+        if any(output) or not blocks:
+            return best_title, output
+    return best_title, [""] * len(blocks)
 
 
 def parse_llm_json(text: str) -> dict:

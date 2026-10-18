@@ -16,4 +16,4 @@ python3 -m digest run --article-concurrency 3 --llm-concurrency 3
 python3 -m digest status
 ```
 
-站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。`llm_concurrency` 是每个翻译模型各自的并发。翻译同时使用本地 `LOCAL_LLM_*`、云端千问 `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_MODEL`、DeepSeek `deepseek-flash`（`DEEPSEEK_API_KEY`，默认 `https://api.deepseek.com`），以及 Kimi `kimi-k2.6`（OpenAI 兼容接口，`MOONSHOT_API_KEY`，默认 `https://api.moonshot.ai/v1`）。某个云端模型失败后只关闭该模型，这篇改由其余云端或本地翻译，另外的云端模型继续各自并发；全部失败再用 `GEMINI_API_KEY`。`run_digest.sh` 会带上这些环境变量。
+站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。`llm_concurrency` 是每个翻译模型各自的并发。翻译同时使用本地 `LOCAL_LLM_*`、云端千问 `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_MODEL`、DeepSeek `deepseek-flash`（`DEEPSEEK_API_KEY`，默认 `https://api.deepseek.com`），以及 Kimi `kimi-k2.6`（OpenAI 兼容接口，`MOONSHOT_API_KEY`，默认 `https://api.moonshot.ai/v1`）。云端限流只关闭该模型；超时、空返回和 5xx 只把这一篇改试其余模型。标题并进正文第一批，长文各批并行。全部失败再用 `GEMINI_API_KEY`。`run_digest.sh` 会带上这些环境变量。

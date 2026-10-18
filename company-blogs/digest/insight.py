@@ -25,7 +25,7 @@ def enrich_insights(
     if not articles:
         return ""
 
-    print(f"[insight] 提炼 {len(articles)} 篇（并发 {concurrency}）…")
+    print(f"[insight] 提炼 {len(articles)} 篇（同时最多 {concurrency} 路，按模型分摊）…")
     workers = max(1, min(concurrency, len(articles)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(_analyze_one, a, translator): a for a in articles}
