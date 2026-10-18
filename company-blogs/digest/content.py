@@ -61,6 +61,9 @@ def extract_article(html: str, url: str, hint_published: str = "", hint_kind: st
 
 
 def _published(soup: BeautifulSoup, hint_published: str, hint_kind: str) -> tuple[datetime | None, str]:
+    found = _blog_date(soup)
+    if found:
+        return found, "page"
     for finder in (_jsonld_date, _meta_date, _posted_on):
         found = finder(soup)
         if found:
@@ -200,6 +203,10 @@ def _description(soup: BeautifulSoup) -> str:
 
 
 def _body(html: str, url: str) -> str:
+    # GoDaddy Website Builder 把正文放在 window._BLOG_DATA，静态页面只剩页脚和 Cookie。
+    blog = _godaddy_blog_body(html)
+    if len(blog) >= 80:
+        return blog
     if "huggingface.co/blog/" in url:
         huggingface = _huggingface_body(html)
         if len(huggingface) >= 80:
@@ -242,9 +249,124 @@ def _focused_html(html: str, url: str) -> str:
     return f"<!DOCTYPE html><html><body>{article}</body></html>" if article else html
 
 
+_BLOG_DATA = "window._BLOG_DATA="
+_DRAFT_HEADER = {
+    "header-one": "#",
+    "header-two": "##",
+    "header-three": "###",
+    "header-four": "####",
+    "header-five": "#####",
+    "header-six": "######",
+}
 _NEXT_PUSH = re.compile(r"self\.__next_f\.push\(\[1,(.*?)\]\)\s*</script>", re.S)
 _GHOST_HTML_REF = re.compile(r'ghostBlogData"\s*:\s*\{.*?"html"\s*:\s*"\$([0-9a-f]+)"')
 _FLIGHT_TAIL = re.compile(r"(?<=[>])\s*[0-9a-f]+:\[")
+
+
+def _blog_date(soup: BeautifulSoup) -> datetime | None:
+    post = _blog_post(_blog_script(soup))
+    if not post:
+        return None
+    return parse_date(str(post.get("publishedDate") or post.get("date") or ""))
+
+
+def _blog_script(soup: BeautifulSoup) -> str:
+    for script in soup.find_all("script"):
+        raw = script.string or ""
+        if _BLOG_DATA in raw:
+            return raw
+    return ""
+
+
+def _blog_post(html: str) -> dict | None:
+    start = html.find(_BLOG_DATA)
+    if start < 0:
+        return None
+    blob = html[start + len(_BLOG_DATA) :]
+    end = blob.find("</script>")
+    blob = blob[:end] if end >= 0 else blob
+    blob = blob.strip().rstrip(";")
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    post = data.get("post") if isinstance(data, dict) else None
+    return post if isinstance(post, dict) else None
+
+
+def _godaddy_blog_body(html: str) -> str:
+    post = _blog_post(html)
+    if not post:
+        return ""
+    full = post.get("fullContent")
+    try:
+        raw = json.loads(full) if isinstance(full, str) else full
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(raw, dict):
+        return ""
+    entities = raw.get("entityMap") or {}
+    lines: list[str] = []
+    for block in raw.get("blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        kind = str(block.get("type") or "unstyled")
+        if kind == "atomic":
+            image = _draft_image(block, entities)
+            if image:
+                lines.append(image)
+            continue
+        text = _draft_inline(block, entities).strip()
+        if not text:
+            continue
+        prefix = _DRAFT_HEADER.get(kind)
+        if prefix:
+            lines.append(f"{prefix} {text}")
+        elif kind == "blockquote":
+            lines.append("> " + text.replace("\n", "\n> "))
+        elif kind == "unordered-list-item":
+            lines.append(f"- {text}")
+        elif kind == "ordered-list-item":
+            lines.append(f"1. {text}")
+        elif kind == "code-block":
+            lines.append(f"```\n{text}\n```")
+        else:
+            lines.append(text)
+    return _clean_body("\n\n".join(lines))
+
+
+def _draft_inline(block: dict, entities: dict) -> str:
+    text = str(block.get("text") or "")
+    spans: list[tuple[int, int, str, str]] = []
+    for item in block.get("inlineStyleRanges") or []:
+        style = item.get("style")
+        mark = {"BOLD": ("**", "**"), "ITALIC": ("*", "*"), "CODE": ("`", "`")}.get(style)
+        if mark:
+            spans.append((int(item.get("offset") or 0), int(item.get("length") or 0), mark[0], mark[1]))
+    for item in block.get("entityRanges") or []:
+        entity = entities.get(str(item.get("key"))) or {}
+        url = str((entity.get("data") or {}).get("url") or "") if entity.get("type") == "LINK" else ""
+        if url:
+            spans.append((int(item.get("offset") or 0), int(item.get("length") or 0), "[", f"]({url})"))
+    for start, length, left, right in sorted(spans, key=lambda span: (span[0], -span[1]), reverse=True):
+        end = start + length
+        if 0 <= start < end <= len(text):
+            text = text[:start] + left + text[start:end] + right + text[end:]
+    return text
+
+
+def _draft_image(block: dict, entities: dict) -> str:
+    for item in block.get("entityRanges") or []:
+        entity = entities.get(str(item.get("key"))) or {}
+        if entity.get("type") != "IMAGE":
+            continue
+        data = entity.get("data") or {}
+        src = str(data.get("src") or "")
+        if src.startswith("//"):
+            src = "https:" + src
+        if src:
+            return f"![{data.get('alt') or ''}]({src})"
+    return ""
 
 
 def _cohere_body(html: str) -> str:
