@@ -45,8 +45,10 @@ export interface CheckpointData {
 const DEFAULT_CACHE_DIR = fileURLToPath(new URL('../.cache/digest', import.meta.url));
 
 export function buildRunKey(hours: number, topN: number, lang: string, date = new Date()): string {
-  const day = date.toISOString().slice(0, 10).replace(/-/g, '');
-  return `${day}-h${hours}-n${topN}-${lang}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}-h${hours}-n${topN}-${lang}`;
 }
 
 export function serializeArticle(a: Article): SerializedArticle {
@@ -110,8 +112,12 @@ export class CheckpointStore {
   private data: CheckpointData;
   private writeChain: Promise<void> = Promise.resolve();
   private lock: Promise<void> = Promise.resolve();
+  private writing: Promise<void> | null = null;
+  private dirty = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private debounceDelayMs = 1500;
+  private lastFlushAt = 0;
+  /** 连续更新时最多隔这么久落一次盘，避免定时器被反复重置而一直不写。 */
+  private maxWaitMs = 2000;
 
   private constructor(path: string, data: CheckpointData) {
     this.path = path;
@@ -157,7 +163,13 @@ export class CheckpointStore {
       const raw = await readFile(path, 'utf8');
       const parsed = JSON.parse(raw) as CheckpointData;
       if (parsed.version === 1 && parsed.runKey === runKey && parsed.stage !== 'done') {
-        console.log(`[digest] Resuming from checkpoint (${parsed.stage}): ${path}`);
+        const feeds = parsed.crawl.doneFeedXmlUrls.length;
+        const scores = Object.keys(parsed.score.byIndex).length;
+        const clippings = parsed.clippingsDoneLinks.length;
+        console.log(
+          `[digest] Resuming from checkpoint (${parsed.stage}): `
+          + `feeds ${feeds}, scores ${scores}, clippings ${clippings} — ${path}`
+        );
         return new CheckpointStore(path, parsed);
       }
       if (parsed.stage === 'done') {
@@ -182,12 +194,30 @@ export class CheckpointStore {
   }
 
   async save(): Promise<void> {
+    if (this.writing) {
+      this.dirty = true;
+      await this.writing;
+      if (this.dirty) return this.save();
+      return;
+    }
+    this.writing = this.persist();
+    try {
+      await this.writing;
+    } finally {
+      this.writing = null;
+    }
+    if (this.dirty) return this.save();
+  }
+
+  private async persist(): Promise<void> {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
+    this.dirty = false;
+    this.lastFlushAt = Date.now();
     this.data.updatedAt = new Date().toISOString();
-    const payload = JSON.stringify(this.data, null, 2);
+    const payload = JSON.stringify(this.data);
     const tmp = `${this.path}.tmp`;
     this.writeChain = this.writeChain.then(async () => {
       await writeFile(tmp, payload, 'utf8');
@@ -196,14 +226,20 @@ export class CheckpointStore {
     await this.writeChain;
   }
 
-  /** 高频进度更新用：合并落盘，降低 I/O；阶段切换前请调用 save()/flush */
+  /** 高频进度更新用：合并落盘，但连续更新时也会按 maxWaitMs 写盘。 */
   saveSoon(): void {
-    this.data.updatedAt = new Date().toISOString();
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.dirty = true;
+    const elapsed = Date.now() - this.lastFlushAt;
+    if (elapsed >= this.maxWaitMs) {
+      void this.save();
+      return;
+    }
+    if (this.debounceTimer) return;
+    const delay = Math.max(50, this.maxWaitMs - elapsed);
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
       void this.save();
-    }, this.debounceDelayMs);
+    }, delay);
   }
 
   async flush(): Promise<void> {

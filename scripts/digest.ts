@@ -1064,7 +1064,9 @@ Environment:
 
 Checkpoint:
   默认自动断点续跑。进度保存在 .cache/digest/checkpoint-*.json
+  爬取、评分、摘要、剪藏会持续写盘；Ctrl+C 也会先保存再退出。
   中断后用相同 --hours/--top-n/--lang 再跑即可从断点继续；--fresh 强制重来。
+  断点按本地日期区分，同一天内中断再跑会接着上次，而不是重新抓全部源。
 
 Examples:
   bun scripts/digest.ts --hours 24 --top-n 30 --lang zh
@@ -1180,6 +1182,21 @@ async function main(): Promise<void> {
   }
 
   const checkpoint = await CheckpointStore.open({ hours, topN, lang, fresh });
+  let stopping = false;
+  const shutdown = async (signal: string) => {
+    if (stopping) process.exit(1);
+    stopping = true;
+    console.error(`\n[digest] 收到 ${signal}，正在保存断点…`);
+    try {
+      await checkpoint.flush();
+      console.error(`[digest] 断点已保存，下次相同参数会从这里继续: ${checkpoint.path}`);
+    } catch (err) {
+      console.error(`[digest] 断点保存失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  };
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
 
   console.log(`[digest] === AI Daily Digest ===`);
   console.log(`[digest] Time range: ${hours} hours`);
