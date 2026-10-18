@@ -23,12 +23,16 @@ _zshrc_assign() {
 [ -n "${OPENAI_MODEL:-}" ] || OPENAI_MODEL="$(_zshrc_assign OPENAI_MODEL)"
 [ -n "${DEEPSEEK_API_KEY:-}" ] || DEEPSEEK_API_KEY="$(_zshrc_assign DEEPSEEK_API_KEY)"
 [ -n "${MOONSHOT_API_KEY:-}" ] || MOONSHOT_API_KEY="$(_zshrc_assign MOONSHOT_API_KEY)"
-export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL DEEPSEEK_API_KEY MOONSHOT_API_KEY
+[ -n "${MOONSHOT_API_BASE:-}" ] || MOONSHOT_API_BASE="$(_zshrc_assign MOONSHOT_API_BASE)"
+[ -n "${MOONSHOT_MODEL:-}" ] || MOONSHOT_MODEL="$(_zshrc_assign MOONSHOT_MODEL)"
+export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL DEEPSEEK_API_KEY MOONSHOT_API_KEY MOONSHOT_API_BASE MOONSHOT_MODEL
 _cloud_key="$OPENAI_API_KEY"
 _cloud_base="$OPENAI_API_BASE"
 _cloud_model="$OPENAI_MODEL"
 _deepseek_key="$DEEPSEEK_API_KEY"
 _moonshot_key="$MOONSHOT_API_KEY"
+_moonshot_base="$MOONSHOT_API_BASE"
+_moonshot_model="$MOONSHOT_MODEL"
 
 if [ -f "$PIPELINE_DIR/mac/.env" ]; then
   # shellcheck disable=SC1091
@@ -41,7 +45,9 @@ fi
 [ -n "$_cloud_model" ] && export OPENAI_MODEL="$_cloud_model"
 [ -n "$_deepseek_key" ] && export DEEPSEEK_API_KEY="$_deepseek_key"
 [ -n "$_moonshot_key" ] && export MOONSHOT_API_KEY="$_moonshot_key"
-unset _cloud_key _cloud_base _cloud_model _deepseek_key _moonshot_key
+[ -n "$_moonshot_base" ] && export MOONSHOT_API_BASE="$_moonshot_base"
+[ -n "$_moonshot_model" ] && export MOONSHOT_MODEL="$_moonshot_model"
+unset _cloud_key _cloud_base _cloud_model _deepseek_key _moonshot_key _moonshot_base _moonshot_model
 export DEEPSEEK_API_BASE="${DEEPSEEK_API_BASE:-https://api.deepseek.com}"
 export DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-flash}"
 export MOONSHOT_API_BASE="${MOONSHOT_API_BASE:-https://api.moonshot.ai/v1}"
