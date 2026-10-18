@@ -5,7 +5,6 @@ import os
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,9 +17,12 @@ LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-# 一篇尽量一次请求。Coding Plan 每 5 小时只有 6000 次，按 8 段一批会把额度用在往返上。
+# 云端一篇尽量一次请求。Coding Plan 每 5 小时只有 6000 次，按 8 段一批会把额度用在往返上。
 _ONE_CALL_CHARS = 18000
 _SPLIT_CHARS = 14000
+# 本地 Qwen 上下文是 8096 token，含提示词和译文。整篇送入会失败并落到兜底模型。
+_LOCAL_CONTEXT = 8096
+_LOCAL_MARGIN = 96
 _channel_limit = 3
 _CLOUD_LIMIT = 8
 _HTTP = threading.local()
@@ -44,16 +46,17 @@ class _Block:
 
 
 class Translator:
-    def __init__(self, call, channels: int = 1, slots: int = 1) -> None:
+    def __init__(self, call, channels: int = 1, slots: int = 1, translate_jobs=None) -> None:
         self._call = call
         self.channels = channels
         self.slots = slots
+        self._translate_jobs = translate_jobs
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Translator:
         _load_env_file(env_file or PROJECT_ROOT / ".env")
-        call, channels, slots = _build_client()
-        return cls(call, channels, slots)
+        call, channels, slots, translate_jobs = _build_client()
+        return cls(call, channels, slots, translate_jobs)
 
     def complete(self, prompt: str) -> str:
         """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
@@ -94,50 +97,29 @@ class Translator:
             translated = self.translate_title(original_title) if want_title else original_title
             return translated, markdown
 
-        batches = _pack_jobs(jobs, _ONE_CALL_CHARS, _SPLIT_CHARS)
-
-        def worker(item: tuple[int, list[tuple[int, str]]]) -> tuple[dict[int, str], int, str]:
-            batch_index, batch = item
-            carry = original_title if want_title and batch_index == 0 else ""
-            got_title, translated = _translate_blocks([content for _, content in batch], self._call, carry)
-            found: dict[int, str] = {}
-            missing = 0
-            for (index, content), text in zip(batch, translated):
-                cleaned = text.strip()
-                if cleaned and cleaned != content.strip():
-                    found[index] = cleaned
-                else:
-                    missing += 1
-            return found, missing, got_title
-
-        # 各批并行发给当时有空的模型；模型名额仍由 call() 按每个模型限制
-        width = min(len(batches), max(1, self.slots))
-        enumerated = list(enumerate(batches))
-        if width == 1:
-            results = [worker(item) for item in enumerated]
+        carry = original_title if want_title else ""
+        if self._translate_jobs is not None:
+            got_title, translated_list = self._translate_jobs(jobs, carry)
         else:
-            with ThreadPoolExecutor(max_workers=width) as pool:
-                results = list(pool.map(worker, enumerated))
-        title_zh = original_title
+            got_title, translated_list = _translate_blocks([content for _, content in jobs], self._call, carry)
+        title_zh = got_title or original_title
+        if want_title and title_zh == original_title:
+            title_zh = self.translate_title(original_title)
 
         translations: dict[int, str] = {}
         failed = 0
-        for found, missing, got_title in results:
-            translations.update(found)
-            failed += missing
-            if got_title:
-                title_zh = got_title
-
+        for (index, content), text in zip(jobs, translated_list):
+            cleaned = text.strip()
+            if cleaned and cleaned != content.strip():
+                translations[index] = cleaned
+            else:
+                failed += 1
         if not translations:
             if failed:
                 board.log_translate(f"[translate] 翻译失败（{failed} 段未译出），保留原文")
-            if want_title and title_zh == original_title:
-                title_zh = self.translate_title(original_title)
             return title_zh, markdown
         if failed:
             board.log_translate(f"[translate] 警告: {failed} 个段落未译出，已译段落保留双语，其余保留原文")
-        if want_title and title_zh == original_title:
-            title_zh = self.translate_title(original_title)
 
         parts: list[str] = []
         for index, block in enumerate(blocks):
@@ -164,11 +146,15 @@ def _build_client():
     cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # 本地按 llm_concurrency。云端单独提高并发：每篇一次长请求，靠并行把墙钟压进几小时。
-    pool: list[tuple[str, object, int]] = [
-        (f"本地 Qwen ({local_base}, model={local_model})",
-         lambda prompt: _call_openai(prompt, local_key, local_base, local_model, max_tokens=8192),
-         _channel_limit),
+    # 本地按 llm_concurrency，并且先按 8096 token 切段。云端整篇一次请求。
+    def _call_local(prompt: str) -> str:
+        room = _output_room(prompt)
+        if room is None:
+            raise RuntimeError(f"本地上下文不足（窗口 {_LOCAL_CONTEXT} token）")
+        return _call_openai(prompt, local_key, local_base, local_model, max_tokens=room)
+
+    pool: list[tuple[str, object, int, str]] = [
+        (f"本地 Qwen ({local_base}, model={local_model})", _call_local, _channel_limit, "local"),
     ]
     if cloud_key and cloud_base and cloud_base != local_base:
         pool.append((
@@ -182,6 +168,7 @@ def _build_client():
                 extra={"enable_thinking": False},
             ),
             _CLOUD_LIMIT,
+            "cloud",
         ))
     fallbacks: list[tuple[str, object]] = []
     if gemini_key:
@@ -193,7 +180,10 @@ def _build_client():
     limits = [item[2] for item in pool]
     print(
         "[translate] "
-        + " | ".join(f"{name} 同时 {limit} 篇" for name, _, limit in pool)
+        + " | ".join(
+            f"{name} 同时 {limit} 篇，{'按 ' + str(_LOCAL_CONTEXT) + ' token 切段' if kind == 'local' else '整篇一次请求'}"
+            for name, _, limit, kind in pool
+        )
         + "。并发超限会等待重试；5 小时额度用尽才关闭该模型"
     )
 
@@ -226,22 +216,25 @@ def _build_client():
             cond.notify_all()
 
     def _invoke(index: int, prompt: str) -> str:
-        name, provider, _ = pool[index]
+        name, provider, _, _kind = pool[index]
         text = provider(prompt)
         if not str(text).strip():
             raise RuntimeError(f"{name} 返回内容为空")
         return str(text)
 
-    def call(prompt: str) -> str:
+    def call(prompt: str, skip: set[int] | None = None) -> str:
         errors: list[str] = []
-        tried: set[int] = set()
+        tried = set(skip or ())
+        for index, (_name, _provider, _limit, kind) in enumerate(pool):
+            if kind == "local" and _output_room(prompt) is None:
+                tried.add(index)
         waits = 0
         while True:
             index = _reserve(tried)
             if index is None:
                 break
             tried.add(index)
-            name, _, _ = pool[index]
+            name, _, _, _kind = pool[index]
             pause = 0.0
             try:
                 return _invoke(index, prompt)
@@ -276,7 +269,33 @@ def _build_client():
                 errors.append(f"{name}: {exc}")
         raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
-    return call, len(pool), sum(limits)
+    def translate_jobs(jobs: list[tuple[int, str]], title: str) -> tuple[str, list[str]]:
+        """先占一个模型名额。本地按段落切到 8096 token 内；云端仍整篇一次请求。"""
+        index = _reserve(set())
+        if index is None:
+            return _translate_blocks([content for _, content in jobs], call, title)
+        local = pool[index][3] == "local"
+        try:
+            batches = _pack_local_jobs(jobs, title) if local else _pack_jobs(jobs, _ONE_CALL_CHARS, _SPLIT_CHARS)
+            return _collect_translations(jobs, batches, title, lambda prompt, index=index: _invoke(index, prompt), local)
+        except Exception as exc:
+            failed = index
+            board.log_translate(f"[translate] {pool[failed][0]} 失败，改试其他模型。原因: {exc}")
+            _release(index)
+            index = None
+            skip = {i for i, item in enumerate(pool) if item[3] == "local"} if local else {failed}
+            return _collect_translations(
+                jobs,
+                _pack_jobs(jobs, _ONE_CALL_CHARS, _SPLIT_CHARS),
+                title,
+                lambda prompt: call(prompt, skip),
+                False,
+            )
+        finally:
+            if index is not None:
+                _release(index)
+
+    return call, len(pool), sum(limits), translate_jobs
 
 
 def _http() -> requests.Session:
@@ -310,6 +329,201 @@ def _pack_jobs(
     if current:
         batches.append(current)
     return batches
+
+
+def _estimate_tokens(text: str) -> int:
+    """偏保守的 Qwen token 估算：中文约 1.2 字一个 token，其余约 2.5 字符一个。"""
+    if not text:
+        return 0
+    cjk = len(_CN.findall(text))
+    other = len(text) - cjk
+    return int(cjk / 1.2 + other / 2.5) + 1
+
+
+def _output_room(prompt: str) -> int | None:
+    """本地输出还剩多少 token。提示词本身放不下时返回 None，避免整篇请求打到本地。"""
+    room = _LOCAL_CONTEXT - _estimate_tokens(prompt) - _LOCAL_MARGIN
+    if room < 256:
+        return None
+    return room
+
+
+def _translation_prompt(blocks: list[str], title: str = "") -> str:
+    marked = "\n\n".join(f"[[{index}]]\n{block}" for index, block in enumerate(blocks))
+    title_rule = "第一行只写“标题：”和译好的一行中文标题，然后空一行。标题已是中文则原样放在这一行。\n" if title else ""
+    return (
+        "你是沉浸式翻译助手。下面每个 [[序号]] 对应一个原文段落，请逐段译成中文。\n"
+        "必须原样保留每一个 [[序号]]，该段译文紧跟在自己的标记后面。\n"
+        "一段只译一段：不要合并，不要拆开，不要调换顺序，不要漏序号，不要把整篇合成一段。\n"
+        "不要重复原文，不要输出解释。保留链接、图片和 Markdown 格式。已是中文的段落，标记后留空。\n"
+        + title_rule
+        + (f"\n待译标题：{title}\n\n" if title else "\n")
+        + marked
+    )
+
+
+def _local_budget_ok(blocks: list[str], title: str) -> bool:
+    if not blocks:
+        return True
+    room = _output_room(_translation_prompt(blocks, title))
+    if room is None:
+        return False
+    output_tokens = int(sum(_estimate_tokens(block) for block in blocks) * 1.35) + 48
+    return room >= output_tokens
+
+
+_SENTENCE = re.compile(r"(?<=[。！？.!?])\s+")
+
+
+def _slice_chars(content: str, title: str) -> list[str]:
+    parts: list[str] = []
+    rest = content.strip()
+    guard = 0
+    while rest and guard < 2000:
+        guard += 1
+        if _local_budget_ok([rest], title):
+            parts.append(rest)
+            break
+        lo, hi, best = 1, len(rest), 0
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if _local_budget_ok([rest[:mid]], title):
+                best = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        if best < 1:
+            best = min(len(rest), 200)
+        cut = rest.rfind(" ", max(1, best // 2), best + 1)
+        if cut < 1:
+            cut = best
+        piece = rest[:cut].strip()
+        if not piece:
+            break
+        parts.append(piece)
+        nxt = rest[cut:].strip()
+        if nxt == rest:
+            break
+        rest = nxt
+    return parts or [content.strip()]
+
+
+def _fitting_pieces(index: int, content: str, title: str) -> list[tuple[int, str]]:
+    if _local_budget_ok([content], title):
+        return [(index, content)]
+    parts = [part.strip() for part in _SENTENCE.split(content) if part.strip()] or [content]
+    pieces: list[tuple[int, str]] = []
+    for part in parts:
+        if _local_budget_ok([part], title):
+            pieces.append((index, part))
+        else:
+            pieces.extend((index, bit) for bit in _slice_chars(part, title))
+    return pieces
+
+
+def _pack_local_jobs(jobs: list[tuple[int, str]], title: str) -> list[list[tuple[int, str]]]:
+    """本地默认按段落切开，每批提示词加译文都落在 8096 token 以内。"""
+    pieces: list[tuple[int, str]] = []
+    for index, content in jobs:
+        pieces.extend(_fitting_pieces(index, content, title))
+    batches: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] = []
+    for piece in pieces:
+        trial = current + [piece]
+        if current and not _local_budget_ok([content for _, content in trial], title if not batches else ""):
+            batches.append(current)
+            current = [piece]
+        else:
+            current = trial
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _collect_translations(jobs, batches, title: str, send, local: bool) -> tuple[str, list[str]]:
+    collected: dict[int, list[str]] = {}
+    best_title = ""
+    for batch_index, batch in enumerate(batches):
+        got, texts = _translate_fitting(batch, title if batch_index == 0 else "", send, local)
+        if got and not best_title:
+            best_title = got
+        for (block_index, _), text in zip(batch, texts):
+            cleaned = text.strip()
+            if cleaned:
+                collected.setdefault(block_index, []).append(cleaned)
+    return best_title, ["\n".join(collected.get(block_index, [])) for block_index, _ in jobs]
+
+
+def _hard_halves(content: str) -> list[str]:
+    text = content.strip()
+    if len(text) < 80:
+        return [text]
+    sentences = [part.strip() for part in _SENTENCE.split(text) if part.strip()]
+    if len(sentences) >= 2:
+        mid = len(sentences) // 2
+        left = " ".join(sentences[:mid]).strip()
+        right = " ".join(sentences[mid:]).strip()
+        if left and right and left != text and right != text:
+            return [left, right]
+    cut = max(1, len(text) // 2)
+    space = text.rfind(" ", 0, cut)
+    if space > len(text) // 5:
+        cut = space
+    left, right = text[:cut].strip(), text[cut:].strip()
+    if not left or not right:
+        return [text]
+    return [left, right]
+
+
+def _is_context_overflow(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in (
+            "context length",
+            "context_length",
+            "maximum context",
+            "max context",
+            "context window",
+            "too many tokens",
+            "token limit",
+            "input is too long",
+            "reduce the length",
+            "上下文不足",
+            "上下文长度",
+        )
+    )
+
+
+def _translate_fitting(
+    pieces: list[tuple[int, str]],
+    title: str,
+    send,
+    local: bool,
+) -> tuple[str, list[str]]:
+    """返回与 pieces 等长的译文。本地超出窗口时对半再切，不把这篇交给兜底模型。"""
+    try:
+        return _translate_blocks([content for _, content in pieces], send, title, strict=True)
+    except Exception as exc:
+        if not local or not _is_context_overflow(exc) or not pieces:
+            raise
+        if len(pieces) > 1:
+            mid = len(pieces) // 2
+            first_title, first = _translate_fitting(pieces[:mid], title, send, True)
+            second_title, second = _translate_fitting(pieces[mid:], "", send, True)
+            return first_title or second_title, first + second
+        block_index, content = pieces[0]
+        halves = _hard_halves(content)
+        if len(halves) < 2:
+            raise
+        got = ""
+        chunks: list[str] = []
+        for part_index, part in enumerate(halves):
+            part_title, one = _translate_fitting([(block_index, part)], title if part_index == 0 else "", send, True)
+            got = got or part_title
+            if one and one[0].strip():
+                chunks.append(one[0].strip())
+        return got, ["\n".join(chunks)]
 
 
 def _is_concurrency_wait(exc: BaseException) -> bool:
@@ -422,25 +636,17 @@ def _call_openai(
     return reasoning if isinstance(reasoning, str) else ""
 
 
-def _translate_blocks(blocks: list[str], call, title: str = "") -> tuple[str, list[str]]:
+def _translate_blocks(blocks: list[str], call, title: str = "", strict: bool = False) -> tuple[str, list[str]]:
     if not blocks and not title:
         return "", []
-    marked = "\n\n".join(f"[[{index}]]\n{block}" for index, block in enumerate(blocks))
-    title_rule = "第一行只写“标题：”和译好的一行中文标题，然后空一行。标题已是中文则原样放在这一行。\n" if title else ""
-    prompt = (
-        "你是沉浸式翻译助手。下面每个 [[序号]] 对应一个原文段落，请逐段译成中文。\n"
-        "必须原样保留每一个 [[序号]]，该段译文紧跟在自己的标记后面。\n"
-        "一段只译一段：不要合并，不要拆开，不要调换顺序，不要漏序号，不要把整篇合成一段。\n"
-        "不要重复原文，不要输出解释。保留链接、图片和 Markdown 格式。已是中文的段落，标记后留空。\n"
-        + title_rule
-        + (f"\n待译标题：{title}\n\n" if title else "\n")
-        + marked
-    )
+    prompt = _translation_prompt(blocks, title)
     best_title = ""
     for _ in range(2):
         try:
             raw = call(prompt)
         except Exception:
+            if strict:
+                raise
             continue
         got_title, output = _align_translations(raw, blocks, title)
         if got_title:
@@ -495,14 +701,8 @@ def _from_markers(text: str, blocks: list[str]) -> list[str] | None:
             continue
         seen.add(slot)
         chunks.append((slot, text[match.end() : end]))
-    chunks = _shift_one_based(chunks, len(blocks))
-    output = [""] * len(blocks)
-    for slot, chunk in chunks:
-        if 0 <= slot < len(blocks) and not output[slot]:
-            output[slot] = _accept_chunk(chunk, blocks, slot)
-    if not any(output):
-        return None
-    return output
+    output = _place_pairs(blocks, chunks)
+    return output if any(output) else None
 
 
 def _from_json(text: str, blocks: list[str], title: str) -> tuple[str, list[str]]:
@@ -532,23 +732,21 @@ def _from_json(text: str, blocks: list[str], title: str) -> tuple[str, list[str]
             indexed.append((item.get("index"), value))
         else:
             positional.append(value)
-    output = [""] * len(blocks)
     if has_index:
-        pairs: list[tuple[int, str]] = []
-        for raw_index, value in indexed:
-            slot = _coerce_index(raw_index)
-            if slot is not None:
-                pairs.append((slot, value))
-        pairs = _shift_one_based(pairs, len(blocks))
-        for slot, value in pairs:
-            if 0 <= slot < len(blocks) and not output[slot]:
-                output[slot] = _accept_chunk(value, blocks, slot)
-        return got_title, output
+        pairs = [(slot, value) for raw, value in indexed if (slot := _coerce_index(raw)) is not None]
+        return got_title, _place_pairs(blocks, pairs)
     # 没有序号时，只有条数与段落数完全一致才按顺序填入，避免少一条就整篇错位
     if len(positional) == len(blocks):
-        for slot, value in enumerate(positional):
-            output[slot] = _accept_chunk(value, blocks, slot)
-    return got_title, output
+        return got_title, _place_pairs(blocks, list(enumerate(positional)))
+    return got_title, empty
+
+
+def _place_pairs(blocks: list[str], pairs: list[tuple[int, str]]) -> list[str]:
+    output = [""] * len(blocks)
+    for slot, text in _shift_one_based(pairs, len(blocks)):
+        if 0 <= slot < len(blocks) and not output[slot]:
+            output[slot] = _accept_chunk(text, blocks, slot)
+    return output
 
 
 def _shift_one_based(pairs: list[tuple[int, str]], count: int) -> list[tuple[int, str]]:

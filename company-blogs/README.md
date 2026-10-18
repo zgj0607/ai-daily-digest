@@ -16,4 +16,4 @@ python3 -m digest run --article-concurrency 3 --llm-concurrency 3
 python3 -m digest status
 ```
 
-站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。`llm_concurrency` 是每个翻译模型各自的并发。翻译同时使用本地 `LOCAL_LLM_*` 和 Coding Plan 云端千问。本地并发看 `llm_concurrency`，云端同时 8 篇。一篇正文尽量一次请求译完，避免把 Coding Plan 每 5 小时 6000 次请求打在分段往返上。并发超限会等待重试；5 小时或周/月额度用尽才关闭该模型。标题并进这一次请求。全部失败再用 `GEMINI_API_KEY`。
+站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。`llm_concurrency` 是每个翻译模型各自的并发。翻译同时使用本地 `LOCAL_LLM_*` 和 Coding Plan 云端千问。本地并发看 `llm_concurrency`，上下文 8096 token，按段落切开后再译。云端同时 8 篇，一篇正文尽量一次请求译完，避免把 Coding Plan 每 5 小时 6000 次请求打在分段往返上。并发超限会等待重试；5 小时或周/月额度用尽才关闭该模型。标题并进该模型的第一次请求。全部失败再用 `GEMINI_API_KEY`。
