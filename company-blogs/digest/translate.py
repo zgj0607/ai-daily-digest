@@ -430,37 +430,172 @@ def _call_openai(
 def _translate_blocks(blocks: list[str], call, title: str = "") -> tuple[str, list[str]]:
     if not blocks and not title:
         return "", []
-    title_line = f"标题：{title}\n\n" if title else ""
-    schema = '{"title":"...","translations":[{"index":0,"text":"..."}]}' if title else '{"translations":[{"index":0,"text":"..."}]}'
-    title_rule = "同时把标题译成自然、简洁的中文，写入 title。已经是中文则原样返回，只要一行。\n" if title else ""
+    marked = "\n\n".join(f"[[{index}]]\n{block}" for index, block in enumerate(blocks))
+    title_rule = "第一行只写“标题：”和译好的一行中文标题，然后空一行。标题已是中文则原样放在这一行。\n" if title else ""
     prompt = (
-        "你是沉浸式翻译助手。将以下非中文 Markdown 段落逐条译为中文。已是中文的返回空字符串 \"\"。保留链接和格式。"
+        "你是沉浸式翻译助手。下面每个 [[序号]] 对应一个原文段落，请逐段译成中文。\n"
+        "必须原样保留每一个 [[序号]]，该段译文紧跟在自己的标记后面。\n"
+        "一段只译一段：不要合并，不要拆开，不要调换顺序，不要漏序号，不要把整篇合成一段。\n"
+        "不要重复原文，不要输出解释。保留链接、图片和 Markdown 格式。已是中文的段落，标记后留空。\n"
         + title_rule
-        + "只返回 JSON：\n"
-        + schema
-        + "\n\n"
-        + title_line
-        + "\n\n".join(f"--- {index} ---\n{block}" for index, block in enumerate(blocks))
+        + (f"\n待译标题：{title}\n\n" if title else "\n")
+        + marked
     )
     best_title = ""
     for _ in range(2):
         try:
-            parsed = parse_llm_json(call(prompt))
+            raw = call(prompt)
         except Exception:
             continue
-        output = [""] * len(blocks)
-        for item in parsed.get("translations") or []:
-            index = item.get("index")
-            text = item.get("text")
-            if isinstance(index, int) and 0 <= index < len(blocks) and text:
-                output[index] = str(text).strip()
-        if title:
-            accepted = _accept_title(title, str(parsed.get("title") or ""))
-            if accepted:
-                best_title = accepted
+        got_title, output = _align_translations(raw, blocks, title)
+        if got_title:
+            best_title = got_title
         if any(output) or not blocks:
             return best_title, output
     return best_title, [""] * len(blocks)
+
+
+_MARKER = re.compile(r"\[\[(\d+)\]\]")
+
+
+def _align_translations(raw: str, blocks: list[str], title: str) -> tuple[str, list[str]]:
+    """按序号把译文对回原段落。对不上的段落留空，避免整篇译文堆到某一段下面。"""
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json|markdown)?\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    got_title, text = _peel_title(text, title)
+    marked = _from_markers(text, blocks)
+    if marked is not None:
+        return got_title, marked
+    parsed_title, parsed = _from_json(text, blocks, title)
+    return got_title or parsed_title, parsed
+
+
+def _peel_title(text: str, title: str) -> tuple[str, str]:
+    lines = text.splitlines()
+    for index, line in enumerate(lines[:4]):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("标题"):
+            payload = re.split(r"[:：]", stripped, maxsplit=1)
+            got = _accept_title(title, payload[1] if len(payload) > 1 else "")
+            rest = "\n".join(lines[:index] + lines[index + 1 :])
+            return got, rest.strip()
+        break
+    return "", text
+
+
+def _from_markers(text: str, blocks: list[str]) -> list[str] | None:
+    matches = list(_MARKER.finditer(text))
+    if not matches:
+        return None
+    chunks: list[tuple[int, str]] = []
+    seen: set[int] = set()
+    for index, match in enumerate(matches):
+        slot = int(match.group(1))
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        if slot in seen:
+            continue
+        seen.add(slot)
+        chunks.append((slot, text[match.end() : end]))
+    chunks = _shift_one_based(chunks, len(blocks))
+    output = [""] * len(blocks)
+    for slot, chunk in chunks:
+        if 0 <= slot < len(blocks) and not output[slot]:
+            output[slot] = _accept_chunk(chunk, blocks, slot)
+    if not any(output):
+        return None
+    return output
+
+
+def _from_json(text: str, blocks: list[str], title: str) -> tuple[str, list[str]]:
+    empty = [""] * len(blocks)
+    try:
+        data = parse_llm_json(text)
+    except Exception:
+        return "", empty
+    got_title = _accept_title(title, str(data.get("title") or "")) if title else ""
+    items = data.get("translations")
+    if not isinstance(items, list) or not items:
+        return got_title, empty
+    indexed: list[tuple[object, str]] = []
+    positional: list[str] = []
+    has_index = False
+    for item in items:
+        if isinstance(item, str):
+            positional.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        value = item.get("text")
+        if not isinstance(value, str):
+            continue
+        if item.get("index") is not None:
+            has_index = True
+            indexed.append((item.get("index"), value))
+        else:
+            positional.append(value)
+    output = [""] * len(blocks)
+    if has_index:
+        pairs: list[tuple[int, str]] = []
+        for raw_index, value in indexed:
+            slot = _coerce_index(raw_index)
+            if slot is not None:
+                pairs.append((slot, value))
+        pairs = _shift_one_based(pairs, len(blocks))
+        for slot, value in pairs:
+            if 0 <= slot < len(blocks) and not output[slot]:
+                output[slot] = _accept_chunk(value, blocks, slot)
+        return got_title, output
+    # 没有序号时，只有条数与段落数完全一致才按顺序填入，避免少一条就整篇错位
+    if len(positional) == len(blocks):
+        for slot, value in enumerate(positional):
+            output[slot] = _accept_chunk(value, blocks, slot)
+    return got_title, output
+
+
+def _shift_one_based(pairs: list[tuple[int, str]], count: int) -> list[tuple[int, str]]:
+    """模型有时从 1 开始编号。只有序号刚好是 1..N 时才整体减一，缺号时保持原序号。"""
+    if count > 0 and {slot for slot, _ in pairs} == set(range(1, count + 1)):
+        return [(slot - 1, value) for slot, value in pairs]
+    return pairs
+
+
+def _coerce_index(value: object) -> int | None:
+    if isinstance(value, bool) or isinstance(value, float):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _accept_chunk(chunk: str, blocks: list[str], index: int) -> str:
+    text = chunk.strip()
+    source = blocks[index].strip()
+    if text.startswith(source):
+        text = text[len(source) :].strip()
+    if not text or text == source:
+        return ""
+    if _swallowed_other(text, blocks, index):
+        return ""
+    if len(blocks) >= 2 and len(text) > 600 and len(text) > max(len(source) * 3, len(source) + 800):
+        return ""
+    return text
+
+
+def _swallowed_other(text: str, blocks: list[str], index: int) -> bool:
+    folded = " ".join(text.split())
+    for other_index, other in enumerate(blocks):
+        if other_index == index:
+            continue
+        probe = " ".join(other.split())[:48]
+        if len(probe) >= 48 and probe in folded:
+            return True
+    return False
 
 
 def parse_llm_json(text: str) -> dict:
