@@ -4,6 +4,7 @@
 #   bash run_digest.sh --daily   只跑 AI 日报（先启动 Ubuntu）
 #   bash run_digest.sh --blogs   只跑 AI 公司博客（先启动 Ubuntu）
 #   bash run_digest.sh --titles  只把已保存博客的英文标题译成中文（先启动 Ubuntu）
+#   bash run_digest.sh --clippings  只翻译日报剪藏里的英文标题和未译正文（先启动 Ubuntu）
 set -euo pipefail
 
 # .zshrc removed: causes unbound variable errors under set -euo pipefail
@@ -139,11 +140,12 @@ if [ "${1:-}" = "--ensure-llm" ]; then
 fi
 
 usage() {
-  echo "用法: bash run_digest.sh [--daily | --blogs | --titles]"
+  echo "用法: bash run_digest.sh [--daily | --blogs | --titles | --clippings]"
   echo "  (无参数)  先跑 AI 日报，再跑 AI 公司博客，结束后关机"
   echo "  --daily   只跑 AI 日报。会先启动 Ubuntu 服务，结束后关机"
   echo "  --blogs   只跑 AI 公司博客爬取和翻译。会先启动 Ubuntu 服务，结束后关机"
   echo "  --titles  只扫描已保存的公司博客，把英文标题译成中文。会先启动 Ubuntu 服务，结束后关机"
+  echo "  --clippings  只扫描日报剪藏，把英文标题和未译正文一次性译成中文。会先启动 Ubuntu 服务，结束后关机"
 }
 
 MODE="${1:-all}"
@@ -151,6 +153,7 @@ case "$MODE" in
   --daily|daily) MODE=daily ;;
   --blogs|blogs) MODE=blogs ;;
   --titles|titles) MODE=titles ;;
+  --clippings|clippings) MODE=clippings ;;
   --help|-h) usage; exit 0 ;;
   all) ;;
   *)
@@ -169,6 +172,7 @@ export DIGEST_ENSURE_LLM_CMD="bash \"$DIGEST_DIR/run_digest.sh\" --ensure-llm"
 DIGEST_STATUS=0
 BLOG_STATUS=0
 TITLE_STATUS=0
+CLIP_STATUS=0
 
 STOPPED=0
 cleanup() {
@@ -200,26 +204,29 @@ run_blogs() {
 }
 
 # 分开运行时先把 Ubuntu 和本地模型拉起来。一起跑时仍由日报在评分前启动。
-run_titles() {
+run_py() {
+  local label=$1 command=$2
   cd "$DIGEST_DIR"
-  echo "[digest] 开始翻译已保存博客的英文标题..."
+  echo "[digest] 开始${label}..."
   set +e
-  (cd "$DIGEST_DIR/company-blogs" && python3 -m digest titles)
-  TITLE_STATUS=$?
+  (cd "$DIGEST_DIR/company-blogs" && python3 -m digest "$command")
+  local status=$?
   set -e
-  if [ "$TITLE_STATUS" -ne 0 ]; then
-    echo "[digest] 警告: 英文标题翻译未全部完成 (exit=$TITLE_STATUS)"
+  if [ "$status" -ne 0 ]; then
+    echo "[digest] 警告: ${label}未全部完成 (exit=$status)"
   fi
+  return "$status"
 }
 
-if [ "$MODE" = "daily" ] || [ "$MODE" = "blogs" ] || [ "$MODE" = "titles" ]; then
+if [ "$MODE" = "daily" ] || [ "$MODE" = "blogs" ] || [ "$MODE" = "titles" ] || [ "$MODE" = "clippings" ]; then
   ensure_llm
 fi
 
 case "$MODE" in
   daily) run_daily ;;
   blogs) run_blogs ;;
-  titles) run_titles ;;
+  titles) run_py "翻译已保存博客的英文标题" titles || TITLE_STATUS=$? ;;
+  clippings) run_py "翻译日报剪藏里的英文标题和正文" clippings || CLIP_STATUS=$? ;;
   all)
     run_daily
     run_blogs
@@ -288,10 +295,9 @@ if [ "$MODE" = "blogs" ] || [ "$MODE" = "all" ]; then
 fi
 
 echo "[digest] 所有任务完成"
-if [ "$MODE" = "blogs" ]; then
-  exit "$BLOG_STATUS"
-fi
-if [ "$MODE" = "titles" ]; then
-  exit "$TITLE_STATUS"
-fi
+case "$MODE" in
+  blogs) exit "$BLOG_STATUS" ;;
+  titles) exit "$TITLE_STATUS" ;;
+  clippings) exit "$CLIP_STATUS" ;;
+esac
 exit "$DIGEST_STATUS"

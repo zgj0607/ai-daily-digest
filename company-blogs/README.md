@@ -15,6 +15,7 @@ python3 -m digest run
 python3 -m digest run --article-concurrency 3 --llm-concurrency 3
 python3 -m digest status
 python3 -m digest titles   # 只把已保存笔记的英文标题译成中文，不改正文
+python3 -m digest clippings   # 扫描日报剪藏，英文标题和未译正文一次性译成中文
 ```
 
 `bash run_digest.sh --titles` 会先启动 Ubuntu 上的本地模型，扫完标题后再关机。

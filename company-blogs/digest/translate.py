@@ -99,6 +99,12 @@ class Translator:
             return [self.translate_title(title) for title in cleaned]
         return [_accept_title(original, text) or self.translate_title(original) for original, text in zip(cleaned, marked)]
 
+    def translate_parts(self, parts: list[tuple[int, str]], title: str = "") -> tuple[str, list[str]]:
+        """整篇一次请求。parts 是 (序号, 原文)，返回 (中文标题, 与 parts 对齐的译文)。"""
+        if self._translate_jobs is not None:
+            return self._translate_jobs(parts, title)
+        return _translate_blocks([content for _, content in parts], self._call, title)
+
     def add_bilingual(self, markdown: str, title: str = "") -> tuple[str, str]:
         """译正文，并把需要翻译的标题放进第一批请求。返回 (中文标题, 双语正文)。"""
         original_title = re.sub(r"\s+", " ", title or "").strip()
@@ -119,10 +125,7 @@ class Translator:
             return translated, markdown
 
         carry = original_title if want_title else ""
-        if self._translate_jobs is not None:
-            got_title, translated_list = self._translate_jobs(jobs, carry)
-        else:
-            got_title, translated_list = _translate_blocks([content for _, content in jobs], self._call, carry)
+        got_title, translated_list = self.translate_parts(jobs, carry)
         title_zh = got_title or original_title
         if want_title and title_zh == original_title:
             title_zh = self.translate_title(original_title)

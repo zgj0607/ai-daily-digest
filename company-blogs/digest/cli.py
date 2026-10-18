@@ -6,6 +6,7 @@ from pathlib import Path
 
 from digest.config import load_settings
 from digest.crawl import run, show_status
+from digest.clippings import DEFAULT_DIR, run_clippings
 from digest.titles import run_titles
 
 
@@ -32,6 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     titles_p.add_argument("--state", type=Path, help="覆盖进度数据库路径")
     titles_p.add_argument("--llm-concurrency", type=int, help="本地模型并发（默认 3）")
 
+    clip_p = sub.add_parser("clippings", help="扫描日报剪藏，把英文标题和未译正文一次性译成中文")
+    clip_p.add_argument("--output-dir", type=Path, help=f"剪藏目录，默认 {DEFAULT_DIR}")
+    clip_p.add_argument("--llm-concurrency", type=int, help="本地模型并发（默认 3）")
+
     args = parser.parse_args(argv)
     settings = load_settings(args.config)
     if getattr(args, "state", None):
@@ -50,4 +55,6 @@ def main(argv: list[str] | None = None) -> int:
         return show_status(settings)
     if args.command == "titles":
         return run_titles(settings)
+    if args.command == "clippings":
+        return run_clippings(settings, args.output_dir)
     return run(settings, only=args.source, limit=args.limit, summary_path=args.summary)
