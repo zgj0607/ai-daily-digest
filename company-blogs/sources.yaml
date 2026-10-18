@@ -3,7 +3,7 @@ state_db: state/crawl.sqlite
 request_interval_seconds: 0.3
 user_agent: ai-company-blog-digest/0.1
 max_attempts: 3
-# 并行：发现 / 爬取落盘（IO）/ 翻译。llm_concurrency 是每个模型各自的并发（本地、Coding Plan、DeepSeek、Kimi，以及百炼按量里的每个模型，各 3）
+# 并行：发现 / 爬取落盘（IO）/ 翻译。llm_concurrency 是每个模型各自的并发（本地、Coding Plan、Kimi，以及百炼按量里的每个模型，各 3）
 source_concurrency: 3
 article_concurrency: 3
 llm_concurrency: 3

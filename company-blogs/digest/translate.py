@@ -16,8 +16,6 @@ from digest.ui import board
 LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
-DEEPSEEK_DEFAULT_BASE = "https://api.deepseek.com"
-DEEPSEEK_DEFAULT_MODEL = "deepseek-flash"
 KIMI_DEFAULT_BASE = "https://api.moonshot.ai/v1"
 KIMI_DEFAULT_MODEL = "kimi-k2.6"
 # 按量付费的免费额度在这个地址。Coding Plan 的 coding.dashscope.aliyuncs.com 不互通。
@@ -178,9 +176,6 @@ def _build_client():
     cloud_key = os.environ.get("OPENAI_API_KEY", "").strip()
     cloud_base = os.environ.get("OPENAI_API_BASE", "").strip().rstrip("/")
     cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
-    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    deepseek_base = (os.environ.get("DEEPSEEK_API_BASE", "").strip() or DEEPSEEK_DEFAULT_BASE).rstrip("/")
-    deepseek_model = os.environ.get("DEEPSEEK_MODEL", "").strip() or DEEPSEEK_DEFAULT_MODEL
     kimi_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
     kimi_base = (os.environ.get("MOONSHOT_API_BASE", "").strip() or KIMI_DEFAULT_BASE).rstrip("/")
     kimi_model = os.environ.get("MOONSHOT_MODEL", "").strip() or KIMI_DEFAULT_MODEL
@@ -200,14 +195,6 @@ def _build_client():
             f"云端 Qwen ({cloud_base}, model={cloud_model or 'qwen'})",
             lambda prompt, key=cloud_key, base=cloud_base, model=cloud_model: _call_openai(
                 prompt, key, base, model or "qwen-plus", extra={"enable_thinking": False},
-            ),
-            True,
-        ))
-    if deepseek_key and deepseek_base != local_base:
-        pool.append((
-            f"DeepSeek ({deepseek_base}, model={deepseek_model})",
-            lambda prompt, key=deepseek_key, base=deepseek_base, model=deepseek_model: _call_openai(
-                prompt, key, base, model, qwen_thinking=False, extra={"thinking": {"type": "disabled"}},
             ),
             True,
         ))
