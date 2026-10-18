@@ -179,7 +179,7 @@ sources:
     enabled: true
     # sitemap 返回 403。文章在列表页，按 ?page= 翻页。
     index_url: https://ai.meta.com/blog/
-    include: '^https://ai.meta.com/blog/[^/]+$'
+    include: '^https://ai.meta.com/blog/[^/?#]+$'
 
   - id: databricks
     name: Databricks

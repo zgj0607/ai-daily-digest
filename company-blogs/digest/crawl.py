@@ -12,9 +12,12 @@ from queue import Queue
 from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+from bs4 import BeautifulSoup
+
 from digest.config import Settings, Source
 from digest.content import (
     absolutize_images,
+    discard_alias,
     extract_article,
     read_markdown_body,
     retitle_markdown,
@@ -387,6 +390,7 @@ def _crawl_article(
             article = extract_article(html, page_url, row.published, row.hint_kind)
         else:
             page_url = row.url
+        page_url = _normalize(page_url)
         if len(article.body) < 80:
             raise RuntimeError("正文过短")
         if not article.title:
@@ -394,8 +398,13 @@ def _crawl_article(
         description = excerpt_from_body(article.body, article.description)
         article.body = absolutize_images(article.body, page_url)
         path = write_markdown(settings.output_dir, source.name, article, page_url)
+        if _normalize(row.url) != page_url:
+            discard_alias(path.parent, row.url, path)
         published = to_iso(article.published)
         state.mark_saved(source.id, row.url, article.title, published, str(path))
+        if page_url != row.url:
+            state.mark_saved(source.id, page_url, article.title, published, str(path))
+            state.mark_translated(source.id, page_url, title=article.title, filepath=str(path))
         saved = SavedArticle(
             source_id=source.id,
             source_name=source.name,
@@ -449,10 +458,17 @@ def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
             if source.accepts(url):
                 items[url] = _Item(url=url, lastmod=to_iso(parse_date(lastmod)) if lastmod else "")
     if source.index_url:
-        for url in _index_links(fetcher, source.index_url):
+        index_path = urlparse(source.index_url).path.rstrip("/")
+        links, dated = _index_links(fetcher, source.index_url)
+        for url in links:
             url = _normalize(url)
+            if urlparse(url).path.rstrip("/") == index_path:
+                continue
+            published = dated.get(url, "")
             if source.accepts(url) and url not in items:
-                items[url] = _Item(url=url, hint_kind="index")
+                items[url] = _Item(url=url, published=published, hint_kind="index")
+            elif published and url in items and not items[url].published:
+                items[url].published = published
     if source.feed_url:
         for url, title, published in _feed_entries(fetcher.bytes(source.feed_url)):
             url = _normalize(url)
@@ -474,10 +490,11 @@ _NEXT_HREF = re.compile(
 )
 
 
-def _index_links(fetcher: Fetcher, page_url: str) -> list[str]:
-    """从列表页抽出文章链接。同一路径上的 ?page= 会继续翻页。"""
+def _index_links(fetcher: Fetcher, page_url: str) -> tuple[list[str], dict[str, str]]:
+    """从列表页抽出文章链接和卡片上的发表日期。同一路径上的 ?page= 会继续翻页。"""
     seen_pages: set[str] = set()
     seen: dict[str, None] = {}
+    dated: dict[str, str] = {}
     current = page_url
     for _ in range(80):
         if current in seen_pages:
@@ -486,11 +503,43 @@ def _index_links(fetcher: Fetcher, page_url: str) -> list[str]:
         html = fetcher.text(current)
         for href in _HREF.findall(html):
             seen.setdefault(urljoin(current, href.strip()), None)
+        for anchor in BeautifulSoup(html, "lxml").find_all("a", href=True):
+            raw = urljoin(current, anchor["href"].strip())
+            url = _normalize(raw)
+            if url in dated:
+                continue
+            when = parse_date(_card_date(anchor))
+            if when:
+                dated[url] = to_iso(when)
         nxt = _next_index(html, current)
         if not nxt:
             break
         current = nxt
-    return list(seen)
+    return list(seen), dated
+
+
+def _card_date(anchor) -> str:
+    """列表卡片里、标题旁边的日期。不要爬到包含多篇文章的外层。"""
+    node = anchor
+    for _ in range(5):
+        parent = getattr(node, "parent", None)
+        if parent is None or not getattr(parent, "find_all", None):
+            break
+        slugs = set()
+        for link in parent.find_all("a", href=True):
+            href = link["href"].split("?")[0].rstrip("/")
+            if "/blog/" in href and not href.endswith("/blog"):
+                slugs.add(href)
+        if len(slugs) > 1:
+            break
+        for child in list(parent.children)[:8]:
+            if not getattr(child, "get_text", None):
+                continue
+            text = re.sub(r"\s+", " ", child.get_text(" ", strip=True))
+            if text and len(text) <= 32 and parse_date(text):
+                return text
+        node = parent
+    return ""
 
 
 def _next_index(html: str, page_url: str) -> str:

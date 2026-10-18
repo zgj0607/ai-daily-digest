@@ -71,7 +71,7 @@ def _published(
         found = parse_date(str(post.get("publishedDate") or post.get("date") or ""))
         if found:
             return found, "page"
-    for finder in (_jsonld_date, _meta_date, _posted_on):
+    for finder in (_jsonld_date, _meta_date, _posted_on, _title_date):
         found = finder(soup)
         if found:
             return found, "page"
@@ -152,6 +152,42 @@ def _posted_on(soup: BeautifulSoup) -> datetime | None:
             return None
         return parse_date(text)
     return None
+
+
+def _title_date(soup: BeautifulSoup) -> datetime | None:
+    """标题旁边的发表日期。Meta 重定向后的正文页把日期放在 h1 附近，没有 meta 标签。"""
+    for heading in soup.find_all("h1"):
+        for text in _near_heading(heading):
+            found = parse_date(text)
+            if found:
+                return found
+    return None
+
+
+def _near_heading(heading) -> list[str]:
+    texts: list[str] = []
+    parent = heading.parent
+    nodes = [parent, parent.parent if parent is not None else None]
+    for node in nodes:
+        if node is None:
+            continue
+        for child in list(node.children)[:8]:
+            if not getattr(child, "get_text", None):
+                continue
+            texts.extend(_short_bits(child))
+    return texts
+
+
+def _short_bits(node) -> list[str]:
+    text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+    if text and len(text) <= 48:
+        return [text]
+    bits: list[str] = []
+    for child in list(node.find_all(True, recursive=False))[:6]:
+        bit = re.sub(r"\s+", " ", child.get_text(" ", strip=True))
+        if bit and len(bit) <= 48:
+            bits.append(bit)
+    return bits
 
 
 def _header_date(soup: BeautifulSoup) -> datetime | None:
@@ -563,10 +599,47 @@ def _render_markdown(article: Article, company: str, url: str) -> str:
 
 def _unique_path(folder: Path, filename: str, url: str) -> Path:
     path = folder / filename
-    if not path.exists() or url in path.read_text(encoding="utf-8", errors="replace")[:2500]:
+    if path.exists() and _cites(path, url):
+        return path
+    found = _find_source(folder, url)
+    if found:
+        return found
+    if not path.exists():
         return path
     digest = hashlib.sha1(url.encode()).hexdigest()[:6]
     return folder / f"{path.stem}-{digest}.md"
+
+
+def discard_alias(folder: Path, url: str, keep: Path) -> None:
+    """重定向前的地址如果已经落过盘，删掉那份，只留最终文件。"""
+    needle = url.split("#", 1)[0].rstrip("/")
+    if not needle:
+        return
+    for existing in folder.glob("*.md"):
+        if existing.resolve() == keep.resolve() or not _cites(existing, needle):
+            continue
+        existing.unlink()
+
+
+def _find_source(folder: Path, url: str) -> Path | None:
+    needle = url.split("#", 1)[0].rstrip("/")
+    if not needle:
+        return None
+    for existing in folder.glob("*.md"):
+        if _cites(existing, needle):
+            return existing
+    return None
+
+
+def _cites(path: Path, url: str) -> bool:
+    needle = url.split("#", 1)[0].strip().strip('"').rstrip("/")
+    if not needle:
+        return False
+    head = path.read_text(encoding="utf-8", errors="replace")[:2500]
+    match = re.search(r'(?m)^source:\s*"?(.*?)"?\s*$', head)
+    if not match:
+        return False
+    return match.group(1).strip().strip('"').rstrip("/") == needle
 
 
 def _quote(value: str) -> str:
