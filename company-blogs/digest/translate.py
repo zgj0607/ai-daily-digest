@@ -153,7 +153,7 @@ def _build_client():
     kimi_model = os.environ.get("MOONSHOT_MODEL", "").strip() or KIMI_DEFAULT_MODEL
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # 本地与各云端模型同时接请求；谁当前更空闲就分给谁。任一云端失败后，关闭全部云端通道，后续只走本地。
+    # 每个模型各自最多 _channel_limit 篇同时在译。某个云端失败只关闭该模型，其余云端和本地继续。
     pool: list[tuple[str, object, bool]] = [
         (f"本地 Qwen ({local_base}, model={local_model})",
          lambda prompt: _call_openai(prompt, local_key, local_base, local_model),
@@ -194,19 +194,21 @@ def _build_client():
 
     inflight = [0] * len(pool)
     closed: set[int] = set()
-    cloud_indexes = [index for index, (_, _, is_cloud) in enumerate(pool) if is_cloud]
-    clouds_closed = {"value": False}
     cond = threading.Condition()
-    print("[translate] 翻译通道: " + " | ".join(name for name, _, _ in pool))
+    print(
+        "[translate] 每个模型同时 "
+        f"{_channel_limit} 篇: "
+        + " | ".join(name for name, _, _ in pool)
+        + "。单个云端失败只关闭该模型"
+    )
 
     def _opened(exclude: set[int]) -> list[int]:
         return [index for index in range(len(pool)) if index not in exclude and index not in closed]
 
-    def _close_clouds() -> bool:
+    def _close_one(index: int) -> bool:
         with cond:
-            first = not clouds_closed["value"]
-            clouds_closed["value"] = True
-            closed.update(cloud_indexes)
+            first = index not in closed
+            closed.add(index)
             cond.notify_all()
             return first
 
@@ -228,6 +230,13 @@ def _build_client():
             inflight[index] -= 1
             cond.notify_all()
 
+    def _invoke(index: int, prompt: str) -> str:
+        name, provider, _ = pool[index]
+        text = provider(prompt)
+        if not str(text).strip():
+            raise RuntimeError(f"{name} 返回内容为空")
+        return str(text)
+
     def call(prompt: str) -> str:
         errors: list[str] = []
         tried: set[int] = set()
@@ -236,19 +245,16 @@ def _build_client():
             if index is None:
                 break
             tried.add(index)
-            name, provider, is_cloud = pool[index]
+            name, _, is_cloud = pool[index]
             try:
-                text = provider(prompt)
-                if not str(text).strip():
-                    raise RuntimeError("返回内容为空")
-                return str(text)
+                return _invoke(index, prompt)
             except Exception as exc:
                 errors.append(f"{name}: {exc}")
                 if is_cloud:
-                    if _close_clouds():
-                        board.log_translate(f"[translate] {name} 失败，后续翻译全部改走本地模型。原因: {exc}")
+                    if _close_one(index):
+                        board.log_translate(f"[translate] {name} 失败，已关闭该模型，其余模型继续。原因: {exc}")
                 else:
-                    board.log_translate(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
+                    board.log_translate(f"[translate] {name} 失败，改试其他模型。原因: {exc}")
             finally:
                 _release(index)
         for name, provider in fallbacks:
