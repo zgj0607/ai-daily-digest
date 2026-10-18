@@ -25,7 +25,10 @@ _zshrc_assign() {
 [ -n "${MOONSHOT_API_KEY:-}" ] || MOONSHOT_API_KEY="$(_zshrc_assign MOONSHOT_API_KEY)"
 [ -n "${MOONSHOT_API_BASE:-}" ] || MOONSHOT_API_BASE="$(_zshrc_assign MOONSHOT_API_BASE)"
 [ -n "${MOONSHOT_MODEL:-}" ] || MOONSHOT_MODEL="$(_zshrc_assign MOONSHOT_MODEL)"
-export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL DEEPSEEK_API_KEY MOONSHOT_API_KEY MOONSHOT_API_BASE MOONSHOT_MODEL
+[ -n "${DASHSCOPE_API_KEY:-}" ] || DASHSCOPE_API_KEY="$(_zshrc_assign DASHSCOPE_API_KEY)"
+[ -n "${DASHSCOPE_API_BASE:-}" ] || DASHSCOPE_API_BASE="$(_zshrc_assign DASHSCOPE_API_BASE)"
+[ -n "${DASHSCOPE_MODELS:-}" ] || DASHSCOPE_MODELS="$(_zshrc_assign DASHSCOPE_MODELS)"
+export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL DEEPSEEK_API_KEY MOONSHOT_API_KEY MOONSHOT_API_BASE MOONSHOT_MODEL DASHSCOPE_API_KEY DASHSCOPE_API_BASE DASHSCOPE_MODELS
 _cloud_key="$OPENAI_API_KEY"
 _cloud_base="$OPENAI_API_BASE"
 _cloud_model="$OPENAI_MODEL"
@@ -33,6 +36,9 @@ _deepseek_key="$DEEPSEEK_API_KEY"
 _moonshot_key="$MOONSHOT_API_KEY"
 _moonshot_base="$MOONSHOT_API_BASE"
 _moonshot_model="$MOONSHOT_MODEL"
+_dashscope_key="$DASHSCOPE_API_KEY"
+_dashscope_base="$DASHSCOPE_API_BASE"
+_dashscope_models="$DASHSCOPE_MODELS"
 
 if [ -f "$PIPELINE_DIR/mac/.env" ]; then
   # shellcheck disable=SC1091
@@ -47,11 +53,15 @@ fi
 [ -n "$_moonshot_key" ] && export MOONSHOT_API_KEY="$_moonshot_key"
 [ -n "$_moonshot_base" ] && export MOONSHOT_API_BASE="$_moonshot_base"
 [ -n "$_moonshot_model" ] && export MOONSHOT_MODEL="$_moonshot_model"
-unset _cloud_key _cloud_base _cloud_model _deepseek_key _moonshot_key _moonshot_base _moonshot_model
+[ -n "$_dashscope_key" ] && export DASHSCOPE_API_KEY="$_dashscope_key"
+[ -n "$_dashscope_base" ] && export DASHSCOPE_API_BASE="$_dashscope_base"
+[ -n "$_dashscope_models" ] && export DASHSCOPE_MODELS="$_dashscope_models"
+unset _cloud_key _cloud_base _cloud_model _deepseek_key _moonshot_key _moonshot_base _moonshot_model _dashscope_key _dashscope_base _dashscope_models
 export DEEPSEEK_API_BASE="${DEEPSEEK_API_BASE:-https://api.deepseek.com}"
 export DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-flash}"
 export MOONSHOT_API_BASE="${MOONSHOT_API_BASE:-https://api.moonshot.ai/v1}"
 export MOONSHOT_MODEL="${MOONSHOT_MODEL:-kimi-k2.6}"
+export DASHSCOPE_API_BASE="${DASHSCOPE_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
 
 # 本地模型单独配置，不覆盖上面的云端 OPENAI_*
 export LOCAL_LLM_MODEL="qwen3.6-27b"
@@ -73,6 +83,9 @@ if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
 fi
 if [ -n "${MOONSHOT_API_KEY:-}" ]; then
   _channels="${_channels} + Kimi ${MOONSHOT_MODEL} (${MOONSHOT_API_BASE})"
+fi
+if [ -n "${DASHSCOPE_API_KEY:-}" ]; then
+  _channels="${_channels} + 百炼按量 (${DASHSCOPE_API_BASE})"
 fi
 echo "[digest] 翻译通道: ${_channels}"
 unset _channels

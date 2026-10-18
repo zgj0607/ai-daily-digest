@@ -20,6 +20,24 @@ DEEPSEEK_DEFAULT_BASE = "https://api.deepseek.com"
 DEEPSEEK_DEFAULT_MODEL = "deepseek-flash"
 KIMI_DEFAULT_BASE = "https://api.moonshot.ai/v1"
 KIMI_DEFAULT_MODEL = "kimi-k2.6"
+# 按量付费的免费额度在这个地址。Coding Plan 的 coding.dashscope.aliyuncs.com 不互通。
+DASHSCOPE_DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_FREE_MODELS = (
+    "qwen3.8-27b",
+    "qwen3.7-flash-2026-07-15",
+    "qwen3.8-flash",
+    "kimi-k3",
+    "deepseek-v4-flash-0731",
+    "qwen3.8-max-0902",
+    "deepseek-v4.1-flash",
+    "glm-5.3",
+    "deepseek-v4-pro-0813",
+    "qwen3.8-2.4t-a95b",
+    "qwen3.8-max",
+    "qwen3.7-flash",
+    "qwen-mt-uni",
+    "qwen3.8-omni-flash",
+)
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 _LOCAL_BATCH = 8
 _channel_limit = 3
@@ -169,6 +187,9 @@ def _build_client():
     kimi_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
     kimi_base = (os.environ.get("MOONSHOT_API_BASE", "").strip() or KIMI_DEFAULT_BASE).rstrip("/")
     kimi_model = os.environ.get("MOONSHOT_MODEL", "").strip() or KIMI_DEFAULT_MODEL
+    dashscope_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
+    dashscope_base = (os.environ.get("DASHSCOPE_API_BASE", "").strip() or DASHSCOPE_DEFAULT_BASE).rstrip("/")
+    dashscope_models = _dashscope_models()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
     # 每个模型各自最多 _channel_limit 篇同时在译。限流只关闭该模型；超时、空返回和 5xx 只改试其余模型。
@@ -208,6 +229,16 @@ def _build_client():
             ),
             True,
         ))
+    if dashscope_key and dashscope_base != local_base:
+        for model in dashscope_models:
+            kwargs = _dashscope_kwargs(model)
+            pool.append((
+                f"百炼 {model} ({dashscope_base})",
+                lambda prompt, key=dashscope_key, base=dashscope_base, model=model, kwargs=kwargs: _call_openai(
+                    prompt, key, base, model, **kwargs
+                ),
+                True,
+            ))
     fallbacks: list[tuple[str, object]] = []
     if gemini_key:
         fallbacks.append(("Gemini", lambda prompt: _call_gemini(prompt, gemini_key)))
@@ -219,7 +250,7 @@ def _build_client():
         "[translate] 每个模型同时 "
         f"{_channel_limit} 篇: "
         + " | ".join(name for name, _, _ in pool)
-        + "。限流只关闭该模型，其他失败改试其余模型"
+        + "。限流或免费额度用尽只关闭该模型，其他失败改试其余模型"
     )
 
     def _opened(exclude: set[int]) -> list[int]:
@@ -272,7 +303,7 @@ def _build_client():
                 errors.append(f"{name}: {exc}")
                 if is_cloud and _is_rate_limited(exc):
                     if _close_one(index):
-                        board.log_translate(f"[translate] {name} 触发限流，已关闭该模型，其余模型继续。原因: {exc}")
+                        board.log_translate(f"[translate] {name} 触发限流或免费额度用尽，已关闭该模型，其余模型继续。原因: {exc}")
                 else:
                     board.log_translate(f"[translate] {name} 失败，改试其他模型。原因: {exc}")
             finally:
@@ -298,13 +329,42 @@ def _http() -> requests.Session:
     return session
 
 
+def _dashscope_models() -> tuple[str, ...]:
+    raw = os.environ.get("DASHSCOPE_MODELS", "").strip()
+    if not raw:
+        return DASHSCOPE_FREE_MODELS
+    models = tuple(part.strip() for part in raw.split(",") if part.strip())
+    return models or DASHSCOPE_FREE_MODELS
+
+
+def _dashscope_kwargs(model: str) -> dict:
+    """kimi-k3 只能走思考模式，不能关思考，也不能传 temperature。"""
+    if model.startswith("kimi-"):
+        return {"qwen_thinking": False, "temperature": None, "top_p": None}
+    extra: dict = {"enable_thinking": False}
+    return {"extra": extra}
+
+
 def _is_rate_limited(exc: BaseException) -> bool:
     text = str(exc).lower()
-    if "429" in text:
+    if "429" in text or ("403" in text and "quota" in text):
         return True
     return any(
         token in text
-        for token in ("rate limit", "ratelimit", "too many requests", "throttl", "quota", "限流", "请求频率", "requestlimit")
+        for token in (
+            "rate limit",
+            "ratelimit",
+            "too many requests",
+            "throttl",
+            "quota",
+            "freetier",
+            "限流",
+            "请求频率",
+            "requestlimit",
+            "免费额度",
+            "额度不足",
+            "额度已用",
+        )
     )
 
 
