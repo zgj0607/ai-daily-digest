@@ -16,23 +16,6 @@ from digest.ui import board
 LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
-KIMI_DEFAULT_BASE = "https://api.moonshot.ai/v1"
-KIMI_DEFAULT_MODEL = "kimi-k2.6"
-# 按量付费的免费额度在这个地址。Coding Plan 的 coding.dashscope.aliyuncs.com 不互通。
-DASHSCOPE_DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DASHSCOPE_FREE_MODELS = (
-    "qwen3.8-27b",
-    "qwen3.7-flash-2026-07-15",
-    "qwen3.8-flash",
-    "kimi-k3",
-    "deepseek-v4-flash-0731",
-    "qwen3.8-max-0902",
-    "deepseek-v4.1-flash",
-    "deepseek-v4-pro-0813",
-    "qwen3.8-max",
-    "qwen3.7-flash",
-    "qwen3.8-omni-flash",
-)
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 _LOCAL_BATCH = 8
 _channel_limit = 3
@@ -176,12 +159,6 @@ def _build_client():
     cloud_key = os.environ.get("OPENAI_API_KEY", "").strip()
     cloud_base = os.environ.get("OPENAI_API_BASE", "").strip().rstrip("/")
     cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
-    kimi_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
-    kimi_base = (os.environ.get("MOONSHOT_API_BASE", "").strip() or KIMI_DEFAULT_BASE).rstrip("/")
-    kimi_model = os.environ.get("MOONSHOT_MODEL", "").strip() or KIMI_DEFAULT_MODEL
-    dashscope_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
-    dashscope_base = (os.environ.get("DASHSCOPE_API_BASE", "").strip() or DASHSCOPE_DEFAULT_BASE).rstrip("/")
-    dashscope_models = _dashscope_models()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
     # 每个模型各自最多 _channel_limit 篇同时在译。限流只关闭该模型；超时、空返回和 5xx 只改试其余模型。
@@ -198,31 +175,6 @@ def _build_client():
             ),
             True,
         ))
-    if kimi_key and kimi_base != local_base:
-        pool.append((
-            f"Kimi ({kimi_base}, model={kimi_model})",
-            lambda prompt, key=kimi_key, base=kimi_base, model=kimi_model: _call_openai(
-                prompt,
-                key,
-                base,
-                model,
-                qwen_thinking=False,
-                temperature=None,
-                top_p=None,
-                extra={"thinking": {"type": "disabled"}},
-            ),
-            True,
-        ))
-    if dashscope_key and dashscope_base != local_base:
-        for model in dashscope_models:
-            kwargs = _dashscope_kwargs(model)
-            pool.append((
-                f"百炼 {model} ({dashscope_base})",
-                lambda prompt, key=dashscope_key, base=dashscope_base, model=model, kwargs=kwargs: _call_openai(
-                    prompt, key, base, model, **kwargs
-                ),
-                True,
-            ))
     fallbacks: list[tuple[str, object]] = []
     if gemini_key:
         fallbacks.append(("Gemini", lambda prompt: _call_gemini(prompt, gemini_key)))
@@ -311,22 +263,6 @@ def _http() -> requests.Session:
         session = requests.Session()
         _HTTP.session = session
     return session
-
-
-def _dashscope_models() -> tuple[str, ...]:
-    raw = os.environ.get("DASHSCOPE_MODELS", "").strip()
-    if not raw:
-        return DASHSCOPE_FREE_MODELS
-    models = tuple(part.strip() for part in raw.split(",") if part.strip())
-    return models or DASHSCOPE_FREE_MODELS
-
-
-def _dashscope_kwargs(model: str) -> dict:
-    """kimi-k3 只能走思考模式，不能关思考，也不能传 temperature。"""
-    if model.startswith("kimi-"):
-        return {"qwen_thinking": False, "temperature": None, "top_p": None}
-    extra: dict = {"enable_thinking": False}
-    return {"extra": extra}
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
