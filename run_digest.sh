@@ -1,5 +1,8 @@
 #!/bin/bash
-# AI Daily Digest：爬取 → 按需启 Ubuntu/LLM → 生成日报 → 关机 → 发飞书
+# AI Daily Digest：爬取 → 按需启 Ubuntu/LLM → 生成日报和/或公司博客 → 关机 → 发飞书
+#   bash run_digest.sh           两者都跑
+#   bash run_digest.sh --daily   只跑 AI 日报（先启动 Ubuntu）
+#   bash run_digest.sh --blogs   只跑 AI 公司博客（先启动 Ubuntu）
 set -euo pipefail
 
 # .zshrc removed: causes unbound variable errors under set -euo pipefail
@@ -128,15 +131,40 @@ stop_llm() {
 }
 
 # 供 digest.ts 子进程调用：bash run_digest.sh --ensure-llm
+# 这个入口不能注册关机陷阱，否则子进程退出会把 Ubuntu 关掉
 if [ "${1:-}" = "--ensure-llm" ]; then
   ensure_llm
   exit $?
 fi
 
+usage() {
+  echo "用法: bash run_digest.sh [--daily | --blogs]"
+  echo "  (无参数)  先跑 AI 日报，再跑 AI 公司博客，结束后关机"
+  echo "  --daily   只跑 AI 日报。会先启动 Ubuntu 服务，结束后关机"
+  echo "  --blogs   只跑 AI 公司博客爬取和翻译。会先启动 Ubuntu 服务，结束后关机"
+}
+
+MODE="${1:-all}"
+case "$MODE" in
+  --daily|daily) MODE=daily ;;
+  --blogs|blogs) MODE=blogs ;;
+  --help|-h) usage; exit 0 ;;
+  all) ;;
+  *)
+    echo "[digest] 未知命令: $MODE"
+    usage
+    exit 1
+    ;;
+esac
+
 DATE=$(date +%Y%m%d)
 OUTPUT_FILE="/tmp/${DATE}-RSS简报.md"
 OBSIDIAN_PATH="/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings/${DATE}-RSS简报.md"
+BLOG_OBSIDIAN_DIR="/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs"
+BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-AI公司博客简报.md"
 export DIGEST_ENSURE_LLM_CMD="bash \"$DIGEST_DIR/run_digest.sh\" --ensure-llm"
+DIGEST_STATUS=0
+BLOG_STATUS=0
 
 STOPPED=0
 cleanup() {
@@ -146,32 +174,48 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cd "$DIGEST_DIR"
-echo "[digest] 开始生成 AI 日报..."
-set +e
-npx -y bun run scripts/digest.ts --hours 24 --top-n 30 --lang zh --output "$OUTPUT_FILE"
-DIGEST_STATUS=$?
-set -e
+run_daily() {
+  cd "$DIGEST_DIR"
+  echo "[digest] 开始生成 AI 日报..."
+  set +e
+  npx -y bun run scripts/digest.ts --hours 24 --top-n 30 --lang zh --output "$OUTPUT_FILE"
+  DIGEST_STATUS=$?
+  set -e
+}
 
-# 本地模型仍在运行，接着抓 AI 公司博客并翻译，完成后再关机（使用本机全局 python3）
-BLOG_OBSIDIAN_DIR="/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs"
-BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-AI公司博客简报.md"
-echo "[digest] 开始抓取 AI 公司博客..."
-set +e
-(cd "$DIGEST_DIR/company-blogs" && python3 -m digest run --summary "$BLOG_SUMMARY")
-BLOG_STATUS=$?
-set -e
-if [ "$BLOG_STATUS" -ne 0 ]; then
-  echo "[digest] 警告: 公司博客抓取失败 (exit=$BLOG_STATUS)"
+run_blogs() {
+  cd "$DIGEST_DIR"
+  echo "[digest] 开始抓取 AI 公司博客..."
+  set +e
+  (cd "$DIGEST_DIR/company-blogs" && python3 -m digest run --summary "$BLOG_SUMMARY")
+  BLOG_STATUS=$?
+  set -e
+  if [ "$BLOG_STATUS" -ne 0 ]; then
+    echo "[digest] 警告: 公司博客抓取失败 (exit=$BLOG_STATUS)"
+  fi
+}
+
+# 分开运行时先把 Ubuntu 和本地模型拉起来。一起跑时仍由日报在评分前启动。
+if [ "$MODE" = "daily" ] || [ "$MODE" = "blogs" ]; then
+  ensure_llm
 fi
 
-# digest 与博客都结束后再关机，不因飞书超时拖住 Ubuntu
+case "$MODE" in
+  daily) run_daily ;;
+  blogs) run_blogs ;;
+  all)
+    run_daily
+    run_blogs
+    ;;
+esac
+
+# 任务结束后再关机，不因飞书超时拖住 Ubuntu
 cleanup
 trap - EXIT
 
 send_feishu() {
   local body="$1"
-  local target="${HERMES_FEISHU_TARGET}"
+  local target="${HERMES_FEISHU_TARGET:-}"
   if [ -z "$target" ]; then
     echo "[digest] 警告: 未设置 HERMES_FEISHU_TARGET，跳过飞书"
     return 0
@@ -187,40 +231,47 @@ send_feishu() {
   return "$status"
 }
 
-if [ -f "$OUTPUT_FILE" ]; then
-  mv "$OUTPUT_FILE" "$OBSIDIAN_PATH"
-  content=$(
-    sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$OBSIDIAN_PATH" \
-    | head -c 3500
-  )
-  echo "[digest] 发送飞书（RSS 简报）..."
-  if ! send_feishu "${content}
+if [ "$MODE" = "daily" ] || [ "$MODE" = "all" ]; then
+  if [ -f "$OUTPUT_FILE" ]; then
+    mv "$OUTPUT_FILE" "$OBSIDIAN_PATH"
+    content=$(
+      sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$OBSIDIAN_PATH" \
+      | head -c 3500
+    )
+    echo "[digest] 发送飞书（RSS 简报）..."
+    if ! send_feishu "${content}
 
 ...
 
 *完整报告已保存到 Obsidian: Clippings/${DATE}-RSS简报.md*"; then
-    echo "[digest] 警告: RSS 飞书发送失败或超时（报告已在 Obsidian）"
+      echo "[digest] 警告: RSS 飞书发送失败或超时（报告已在 Obsidian）"
+    fi
+  elif [ "$DIGEST_STATUS" -ne 0 ]; then
+    echo "[digest] 警告: digest 失败 (exit=$DIGEST_STATUS)"
   fi
-elif [ "$DIGEST_STATUS" -ne 0 ]; then
-  echo "[digest] 警告: digest 失败 (exit=$DIGEST_STATUS)"
 fi
 
-if [ -f "$BLOG_SUMMARY" ]; then
-  blog_content=$(
-    sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$BLOG_SUMMARY" \
-    | head -c 3500
-  )
-  echo "[digest] 发送飞书（公司博客简报）..."
-  if ! send_feishu "${blog_content}
+if [ "$MODE" = "blogs" ] || [ "$MODE" = "all" ]; then
+  if [ -f "$BLOG_SUMMARY" ]; then
+    blog_content=$(
+      sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$BLOG_SUMMARY" \
+      | head -c 3500
+    )
+    echo "[digest] 发送飞书（公司博客简报）..."
+    if ! send_feishu "${blog_content}
 
 ...
 
 *完整简报已保存到 Obsidian: ai-company-blogs/${DATE}-AI公司博客简报.md*"; then
-    echo "[digest] 警告: 公司博客飞书发送失败或超时（简报已在 Obsidian）"
+      echo "[digest] 警告: 公司博客飞书发送失败或超时（简报已在 Obsidian）"
+    fi
+  elif [ "$BLOG_STATUS" -ne 0 ]; then
+    echo "[digest] 警告: 公司博客无简报可发送"
   fi
-elif [ "$BLOG_STATUS" -ne 0 ]; then
-  echo "[digest] 警告: 公司博客无简报可发送"
 fi
 
 echo "[digest] 所有任务完成"
+if [ "$MODE" = "blogs" ]; then
+  exit "$BLOG_STATUS"
+fi
 exit "$DIGEST_STATUS"

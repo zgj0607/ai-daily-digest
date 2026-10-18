@@ -24,7 +24,10 @@ _SPLIT_CHARS = 14000
 _LOCAL_CONTEXT = 8096
 _LOCAL_MARGIN = 96
 _channel_limit = 3
-_CLOUD_LIMIT = 8
+# Coding Plan 并发由平台动态分配，没有公开固定值。起步 8，跑顺就加，顶到拒绝再降。
+_CLOUD_FLOOR = 4
+_CLOUD_START = 8
+_CLOUD_CEILING = 20
 _HTTP = threading.local()
 
 
@@ -167,7 +170,7 @@ def _build_client():
                 max_tokens=16384,
                 extra={"enable_thinking": False},
             ),
-            _CLOUD_LIMIT,
+            _CLOUD_CEILING,
             "cloud",
         ))
     fallbacks: list[tuple[str, object]] = []
@@ -177,14 +180,22 @@ def _build_client():
     inflight = [0] * len(pool)
     closed: set[int] = set()
     cond = threading.Condition()
-    limits = [item[2] for item in pool]
+    ceilings = [item[2] for item in pool]
+    live = [
+        _CLOUD_START if kind == "cloud" else limit
+        for _name, _provider, limit, kind in pool
+    ]
+    pressure_until = 0.0
+    cloud_done = 0
     print(
         "[translate] "
         + " | ".join(
-            f"{name} 同时 {limit} 篇，{'按 ' + str(_LOCAL_CONTEXT) + ' token 切段' if kind == 'local' else '整篇一次请求'}"
+            f"{name} 同时 { _CLOUD_START if kind == 'cloud' else limit } 篇"
+            f"{'' if kind == 'local' else f'，最多 {limit} 篇'}，"
+            f"{'按 ' + str(_LOCAL_CONTEXT) + ' token 切段' if kind == 'local' else '整篇一次请求'}"
             for name, _, limit, kind in pool
         )
-        + "。并发超限会等待重试；5 小时额度用尽才关闭该模型"
+        + "。云端跑顺会继续加并发；超限只降速重试，5 小时额度用尽才关闭"
     )
 
     def _opened(exclude: set[int]) -> list[int]:
@@ -205,7 +216,7 @@ def _build_client():
                     return None
                 opened.sort(key=lambda index: inflight[index])
                 for index in opened:
-                    if inflight[index] < limits[index]:
+                    if inflight[index] < live[index]:
                         inflight[index] += 1
                         return index
                 cond.wait()
@@ -221,6 +232,55 @@ def _build_client():
         if not str(text).strip():
             raise RuntimeError(f"{name} 返回内容为空")
         return str(text)
+
+    def _pressure(index: int, *, usage: bool) -> None:
+        nonlocal pressure_until
+        with cond:
+            pressure_until = time.time() + 45
+            if usage:
+                live[index] = max(_CLOUD_FLOOR, live[index] - 2)
+            else:
+                live[index] = max(_CLOUD_FLOOR, min(live[index], inflight[index] - 1))
+            cond.notify_all()
+
+    def _note_success(index: int) -> None:
+        nonlocal cloud_done
+        if pool[index][3] != "cloud":
+            return
+        with cond:
+            if time.time() < pressure_until or live[index] >= ceilings[index]:
+                return
+            cloud_done += 1
+            if cloud_done % 6 != 0:
+                return
+            live[index] += 1
+            cond.notify_all()
+            current = live[index]
+        board.log_translate(f"[translate] 云端并发提到 {current}")
+
+    def _send_held(index: int, prompt: str) -> str:
+        """占着当前名额重试。并发超限只降低后续准入，不把这篇改交给兜底模型。"""
+        waits = 0
+        while True:
+            try:
+                text = _invoke(index, prompt)
+            except Exception as exc:
+                cloud = pool[index][3] == "cloud"
+                if cloud and _is_concurrency_wait(exc) and waits < 12:
+                    _pressure(index, usage=False)
+                    waits += 1
+                    board.log_translate(f"[translate] {pool[index][0]} 并发超限，降到 {live[index]} 后重试。原因: {exc}")
+                    time.sleep(min(3.0, 0.25 * waits))
+                    continue
+                if cloud and _is_usage_wait(exc) and waits < 5:
+                    _pressure(index, usage=True)
+                    waits += 1
+                    board.log_translate(f"[translate] {pool[index][0]} 短时用量超限，降到 {live[index]}，60 秒后重试。原因: {exc}")
+                    time.sleep(60)
+                    continue
+                raise
+            _note_success(index)
+            return text
 
     def call(prompt: str, skip: set[int] | None = None) -> str:
         errors: list[str] = []
@@ -243,11 +303,18 @@ def _build_client():
                 if _is_plan_exhausted(exc):
                     if _close_one(index):
                         board.log_translate(f"[translate] {name} 套餐额度用尽，已关闭该模型。原因: {exc}")
-                elif _is_concurrency_wait(exc) and waits < 8:
+                elif _kind == "cloud" and _is_concurrency_wait(exc) and waits < 12:
+                    _pressure(index, usage=False)
                     waits += 1
                     tried.discard(index)
-                    pause = min(5.0, 0.4 * waits)
-                    board.log_translate(f"[translate] {name} 并发超限，等待后重试。原因: {exc}")
+                    pause = min(3.0, 0.25 * waits)
+                    board.log_translate(f"[translate] {name} 并发超限，降到 {live[index]} 后重试。原因: {exc}")
+                elif _kind == "cloud" and _is_usage_wait(exc) and waits < 5:
+                    _pressure(index, usage=True)
+                    waits += 1
+                    tried.discard(index)
+                    pause = 60.0
+                    board.log_translate(f"[translate] {name} 短时用量超限，降到 {live[index]}，60 秒后重试。原因: {exc}")
                 elif _is_rate_limited(exc) and waits < 4:
                     waits += 1
                     tried.discard(index)
@@ -277,7 +344,7 @@ def _build_client():
         local = pool[index][3] == "local"
         try:
             batches = _pack_local_jobs(jobs, title) if local else _pack_jobs(jobs, _ONE_CALL_CHARS, _SPLIT_CHARS)
-            return _collect_translations(jobs, batches, title, lambda prompt, index=index: _invoke(index, prompt), local)
+            return _collect_translations(jobs, batches, title, lambda prompt, index=index: _send_held(index, prompt), local)
         except Exception as exc:
             failed = index
             board.log_translate(f"[translate] {pool[failed][0]} 失败，改试其他模型。原因: {exc}")
@@ -295,7 +362,7 @@ def _build_client():
             if index is not None:
                 _release(index)
 
-    return call, len(pool), sum(limits), translate_jobs
+    return call, len(pool), sum(ceilings), translate_jobs
 
 
 def _http() -> requests.Session:
@@ -528,6 +595,10 @@ def _translate_fitting(
 
 def _is_concurrency_wait(exc: BaseException) -> bool:
     return "concurrency" in str(exc).lower()
+
+
+def _is_usage_wait(exc: BaseException) -> bool:
+    return "usage allocated quota" in str(exc).lower()
 
 
 def _is_plan_exhausted(exc: BaseException) -> bool:
