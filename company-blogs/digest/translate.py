@@ -81,6 +81,24 @@ class Translator:
             return cleaned
         return _accept_title(cleaned, text) or cleaned
 
+    def translate_title_batch(self, titles: list[str]) -> list[str]:
+        """一批标题一次请求。对不上序号的条目再走 translate_title。"""
+        cleaned = [re.sub(r"\s+", " ", title or "").strip() for title in titles]
+        if len(cleaned) <= 1:
+            return [self.translate_title(title) for title in cleaned]
+        prompt = (
+            "你是技术编辑。把每个 [[序号]] 后的文章标题译成自然、简洁的中文。\n"
+            "必须原样保留每一个 [[序号]]，译文紧跟在自己的标记后面。不要合并、漏序号或解释。\n\n"
+            + "\n\n".join(f"[[{index}]]\n{title}" for index, title in enumerate(cleaned))
+        )
+        try:
+            marked = _from_markers(self.complete(prompt), cleaned)
+        except Exception:
+            marked = None
+        if not marked:
+            return [self.translate_title(title) for title in cleaned]
+        return [_accept_title(original, text) or self.translate_title(original) for original, text in zip(cleaned, marked)]
+
     def add_bilingual(self, markdown: str, title: str = "") -> tuple[str, str]:
         """译正文，并把需要翻译的标题放进第一批请求。返回 (中文标题, 双语正文)。"""
         original_title = re.sub(r"\s+", " ", title or "").strip()

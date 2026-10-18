@@ -191,6 +191,21 @@ class State:
             )
             self.conn.commit()
 
+    def rename_saved(self, url: str, title: str, filepath: str) -> None:
+        """只改已保存文章的标题和路径，不改变是否已翻译。"""
+        if not url:
+            return
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE articles
+                SET title = ?, filepath = ?, updated_at = ?
+                WHERE url = ?
+                """,
+                (title, filepath, utc_now(), url),
+            )
+            self.conn.commit()
+
     def library_counts(self, source_ids: list[str]) -> tuple[int, int, int]:
         """已启用源在库中的 (已爬取, 已翻译, 未翻译)。"""
         if not source_ids:

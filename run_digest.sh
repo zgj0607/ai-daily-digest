@@ -3,6 +3,7 @@
 #   bash run_digest.sh           两者都跑
 #   bash run_digest.sh --daily   只跑 AI 日报（先启动 Ubuntu）
 #   bash run_digest.sh --blogs   只跑 AI 公司博客（先启动 Ubuntu）
+#   bash run_digest.sh --titles  只把已保存博客的英文标题译成中文（先启动 Ubuntu）
 set -euo pipefail
 
 # .zshrc removed: causes unbound variable errors under set -euo pipefail
@@ -138,16 +139,18 @@ if [ "${1:-}" = "--ensure-llm" ]; then
 fi
 
 usage() {
-  echo "用法: bash run_digest.sh [--daily | --blogs]"
+  echo "用法: bash run_digest.sh [--daily | --blogs | --titles]"
   echo "  (无参数)  先跑 AI 日报，再跑 AI 公司博客，结束后关机"
   echo "  --daily   只跑 AI 日报。会先启动 Ubuntu 服务，结束后关机"
   echo "  --blogs   只跑 AI 公司博客爬取和翻译。会先启动 Ubuntu 服务，结束后关机"
+  echo "  --titles  只扫描已保存的公司博客，把英文标题译成中文。会先启动 Ubuntu 服务，结束后关机"
 }
 
 MODE="${1:-all}"
 case "$MODE" in
   --daily|daily) MODE=daily ;;
   --blogs|blogs) MODE=blogs ;;
+  --titles|titles) MODE=titles ;;
   --help|-h) usage; exit 0 ;;
   all) ;;
   *)
@@ -165,6 +168,7 @@ BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-AI公司博客简报.md"
 export DIGEST_ENSURE_LLM_CMD="bash \"$DIGEST_DIR/run_digest.sh\" --ensure-llm"
 DIGEST_STATUS=0
 BLOG_STATUS=0
+TITLE_STATUS=0
 
 STOPPED=0
 cleanup() {
@@ -196,13 +200,26 @@ run_blogs() {
 }
 
 # 分开运行时先把 Ubuntu 和本地模型拉起来。一起跑时仍由日报在评分前启动。
-if [ "$MODE" = "daily" ] || [ "$MODE" = "blogs" ]; then
+run_titles() {
+  cd "$DIGEST_DIR"
+  echo "[digest] 开始翻译已保存博客的英文标题..."
+  set +e
+  (cd "$DIGEST_DIR/company-blogs" && python3 -m digest titles)
+  TITLE_STATUS=$?
+  set -e
+  if [ "$TITLE_STATUS" -ne 0 ]; then
+    echo "[digest] 警告: 英文标题翻译未全部完成 (exit=$TITLE_STATUS)"
+  fi
+}
+
+if [ "$MODE" = "daily" ] || [ "$MODE" = "blogs" ] || [ "$MODE" = "titles" ]; then
   ensure_llm
 fi
 
 case "$MODE" in
   daily) run_daily ;;
   blogs) run_blogs ;;
+  titles) run_titles ;;
   all)
     run_daily
     run_blogs
@@ -273,5 +290,8 @@ fi
 echo "[digest] 所有任务完成"
 if [ "$MODE" = "blogs" ]; then
   exit "$BLOG_STATUS"
+fi
+if [ "$MODE" = "titles" ]; then
+  exit "$TITLE_STATUS"
 fi
 exit "$DIGEST_STATUS"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from digest.config import load_settings
 from digest.crawl import run, show_status
+from digest.titles import run_titles
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     status_p = sub.add_parser("status", help="查看每个来源的爬取进度")
     status_p.add_argument("--state", type=Path, help="覆盖进度数据库路径")
 
+    titles_p = sub.add_parser("titles", help="扫描已保存笔记，把英文标题译成中文并改文件名")
+    titles_p.add_argument("--output-dir", type=Path, help="覆盖 Markdown 输出目录")
+    titles_p.add_argument("--state", type=Path, help="覆盖进度数据库路径")
+    titles_p.add_argument("--llm-concurrency", type=int, help="本地模型并发（默认 3）")
+
     args = parser.parse_args(argv)
     settings = load_settings(args.config)
     if getattr(args, "state", None):
@@ -42,4 +48,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "status":
         return show_status(settings)
+    if args.command == "titles":
+        return run_titles(settings)
     return run(settings, only=args.source, limit=args.limit, summary_path=args.summary)
