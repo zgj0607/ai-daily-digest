@@ -37,6 +37,22 @@ sources:
     sitemap_url: https://www.anthropic.com/sitemap.xml
     include: '^https://www.anthropic.com/engineering/[^/]+$'
 
+  - id: anthropic-research
+    name: Anthropic
+    enabled: true
+    # 研究文章。列表页只有最新一批，其余在 sitemap。团队页 /research/team/... 不匹配。
+    index_url: https://www.anthropic.com/research
+    sitemap_url: https://www.anthropic.com/sitemap.xml
+    include: '^https://www.anthropic.com/research/[^/]+$'
+
+  - id: anthropic-articles
+    name: Anthropic
+    enabled: true
+    # Claude 资源文章。列表页只有最新一批，其余在 sitemap。不含其他语言版本。
+    index_url: https://claude.com/resources/articles
+    sitemap_url: https://claude.com/sitemap.xml
+    include: '^https://claude.com/resources/articles/[^/]+$'
+
   - id: huggingface
     name: Hugging Face
     enabled: true
