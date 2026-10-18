@@ -21,7 +21,6 @@ GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini
 # 一篇尽量一次请求。Coding Plan 每 5 小时只有 6000 次，按 8 段一批会把额度用在往返上。
 _ONE_CALL_CHARS = 18000
 _SPLIT_CHARS = 14000
-_LOCAL_BATCH = 8
 _channel_limit = 3
 _CLOUD_LIMIT = 8
 _HTTP = threading.local()
@@ -45,17 +44,16 @@ class _Block:
 
 
 class Translator:
-    def __init__(self, call, translate_batch: int = _LOCAL_BATCH, channels: int = 1, slots: int = 1) -> None:
+    def __init__(self, call, channels: int = 1, slots: int = 1) -> None:
         self._call = call
-        self.translate_batch = translate_batch
         self.channels = channels
         self.slots = slots
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Translator:
         _load_env_file(env_file or PROJECT_ROOT / ".env")
-        call, batch, channels, slots = _build_client()
-        return cls(call, batch, channels, slots)
+        call, channels, slots = _build_client()
+        return cls(call, channels, slots)
 
     def complete(self, prompt: str) -> str:
         """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
@@ -146,9 +144,8 @@ class Translator:
             parts.append(block.content)
             translated = translations.get(index)
             if translated:
-                parts.append("")
                 parts.append(translated)
-        return title_zh, re.sub(r"\n{3,}", "\n\n", "\n\n".join(parts)).strip()
+        return title_zh, "\n\n".join(parts).strip()
 
 
 def _build_client():
@@ -168,10 +165,9 @@ def _build_client():
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
     # 本地按 llm_concurrency。云端单独提高并发：每篇一次长请求，靠并行把墙钟压进几小时。
-    pool: list[tuple[str, object, bool, int]] = [
+    pool: list[tuple[str, object, int]] = [
         (f"本地 Qwen ({local_base}, model={local_model})",
          lambda prompt: _call_openai(prompt, local_key, local_base, local_model, max_tokens=8192),
-         False,
          _channel_limit),
     ]
     if cloud_key and cloud_base and cloud_base != local_base:
@@ -185,7 +181,6 @@ def _build_client():
                 max_tokens=16384,
                 extra={"enable_thinking": False},
             ),
-            True,
             _CLOUD_LIMIT,
         ))
     fallbacks: list[tuple[str, object]] = []
@@ -195,10 +190,10 @@ def _build_client():
     inflight = [0] * len(pool)
     closed: set[int] = set()
     cond = threading.Condition()
-    limits = [item[3] for item in pool]
+    limits = [item[2] for item in pool]
     print(
         "[translate] "
-        + " | ".join(f"{name} 同时 {limit} 篇" for name, _, _, limit in pool)
+        + " | ".join(f"{name} 同时 {limit} 篇" for name, _, limit in pool)
         + "。并发超限会等待重试；5 小时额度用尽才关闭该模型"
     )
 
@@ -231,7 +226,7 @@ def _build_client():
             cond.notify_all()
 
     def _invoke(index: int, prompt: str) -> str:
-        name, provider, _, _limit = pool[index]
+        name, provider, _ = pool[index]
         text = provider(prompt)
         if not str(text).strip():
             raise RuntimeError(f"{name} 返回内容为空")
@@ -246,7 +241,7 @@ def _build_client():
             if index is None:
                 break
             tried.add(index)
-            name, _, _is_cloud, _limit = pool[index]
+            name, _, _ = pool[index]
             pause = 0.0
             try:
                 return _invoke(index, prompt)
@@ -281,7 +276,7 @@ def _build_client():
                 errors.append(f"{name}: {exc}")
         raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
-    return call, _LOCAL_BATCH, len(pool), sum(limits)
+    return call, len(pool), sum(limits)
 
 
 def _http() -> requests.Session:
