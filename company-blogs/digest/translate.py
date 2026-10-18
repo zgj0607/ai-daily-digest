@@ -30,12 +30,9 @@ DASHSCOPE_FREE_MODELS = (
     "deepseek-v4-flash-0731",
     "qwen3.8-max-0902",
     "deepseek-v4.1-flash",
-    "glm-5.3",
     "deepseek-v4-pro-0813",
-    "qwen3.8-2.4t-a95b",
     "qwen3.8-max",
     "qwen3.7-flash",
-    "qwen-mt-uni",
     "qwen3.8-omni-flash",
 )
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
