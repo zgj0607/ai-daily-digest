@@ -15,6 +15,10 @@ from digest.ui import board
 LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
+DEEPSEEK_DEFAULT_BASE = "https://api.deepseek.com"
+DEEPSEEK_DEFAULT_MODEL = "deepseek-flash"
+KIMI_DEFAULT_BASE = "https://api.moonshot.ai/v1"
+KIMI_DEFAULT_MODEL = "kimi-k2.6"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 _LOCAL_BATCH = 8
 _channel_limit = 3
@@ -141,9 +145,15 @@ def _build_client():
     cloud_key = os.environ.get("OPENAI_API_KEY", "").strip()
     cloud_base = os.environ.get("OPENAI_API_BASE", "").strip().rstrip("/")
     cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    deepseek_base = (os.environ.get("DEEPSEEK_API_BASE", "").strip() or DEEPSEEK_DEFAULT_BASE).rstrip("/")
+    deepseek_model = os.environ.get("DEEPSEEK_MODEL", "").strip() or DEEPSEEK_DEFAULT_MODEL
+    kimi_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
+    kimi_base = (os.environ.get("MOONSHOT_API_BASE", "").strip() or KIMI_DEFAULT_BASE).rstrip("/")
+    kimi_model = os.environ.get("MOONSHOT_MODEL", "").strip() or KIMI_DEFAULT_MODEL
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # 本地与云端千问同时接请求；谁当前更空闲就分给谁。云端限流后关闭该通道。
+    # 本地与各云端模型同时接请求；谁当前更空闲就分给谁。任一云端失败后，关闭全部云端通道，后续只走本地。
     pool: list[tuple[str, object, bool]] = [
         (f"本地 Qwen ({local_base}, model={local_model})",
          lambda prompt: _call_openai(prompt, local_key, local_base, local_model),
@@ -155,21 +165,50 @@ def _build_client():
             lambda prompt, key=cloud_key, base=cloud_base, model=cloud_model: _call_openai(prompt, key, base, model or "qwen-plus"),
             True,
         ))
+    if deepseek_key and deepseek_base != local_base:
+        pool.append((
+            f"DeepSeek ({deepseek_base}, model={deepseek_model})",
+            lambda prompt, key=deepseek_key, base=deepseek_base, model=deepseek_model: _call_openai(
+                prompt, key, base, model, qwen_thinking=False, extra={"thinking": {"type": "disabled"}},
+            ),
+            True,
+        ))
+    if kimi_key and kimi_base != local_base:
+        pool.append((
+            f"Kimi ({kimi_base}, model={kimi_model})",
+            lambda prompt, key=kimi_key, base=kimi_base, model=kimi_model: _call_openai(
+                prompt,
+                key,
+                base,
+                model,
+                qwen_thinking=False,
+                temperature=None,
+                top_p=None,
+                extra={"thinking": {"type": "disabled"}},
+            ),
+            True,
+        ))
     fallbacks: list[tuple[str, object]] = []
     if gemini_key:
         fallbacks.append(("Gemini", lambda prompt: _call_gemini(prompt, gemini_key)))
 
     inflight = [0] * len(pool)
-    cloud_closed = {"value": False}
+    closed: set[int] = set()
+    cloud_indexes = [index for index, (_, _, is_cloud) in enumerate(pool) if is_cloud]
+    clouds_closed = {"value": False}
     cond = threading.Condition()
     print("[translate] 翻译通道: " + " | ".join(name for name, _, _ in pool))
 
     def _opened(exclude: set[int]) -> list[int]:
-        return [
-            index
-            for index in range(len(pool))
-            if index not in exclude and not (pool[index][2] and cloud_closed["value"])
-        ]
+        return [index for index in range(len(pool)) if index not in exclude and index not in closed]
+
+    def _close_clouds() -> bool:
+        with cond:
+            first = not clouds_closed["value"]
+            clouds_closed["value"] = True
+            closed.update(cloud_indexes)
+            cond.notify_all()
+            return first
 
     def _reserve(exclude: set[int]) -> int | None:
         with cond:
@@ -205,13 +244,9 @@ def _build_client():
                 return str(text)
             except Exception as exc:
                 errors.append(f"{name}: {exc}")
-                if is_cloud and _is_rate_limited(exc):
-                    with cond:
-                        first = not cloud_closed["value"]
-                        cloud_closed["value"] = True
-                        cond.notify_all()
-                    if first:
-                        board.log_translate(f"[translate] 云端千问触发限流（5小时6000次），后续改走本地模型。原因: {exc}")
+                if is_cloud:
+                    if _close_clouds():
+                        board.log_translate(f"[translate] {name} 失败，后续翻译全部改走本地模型。原因: {exc}")
                 else:
                     board.log_translate(f"[translate] {name} 失败，改试其他通道。原因: {exc}")
             finally:
@@ -227,16 +262,6 @@ def _build_client():
         raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
     return call, _LOCAL_BATCH, len(pool)
-
-
-def _is_rate_limited(exc: BaseException) -> bool:
-    text = str(exc).lower()
-    if "429" in text:
-        return True
-    return any(
-        token in text
-        for token in ("rate limit", "ratelimit", "too many requests", "throttl", "quota", "限流", "请求频率", "requestlimit")
-    )
 
 
 def _call_gemini(prompt: str, api_key: str) -> str:
@@ -258,17 +283,33 @@ def _call_gemini(prompt: str, api_key: str) -> str:
     return text or ""
 
 
-def _call_openai(prompt: str, api_key: str, api_base: str, model: str) -> str:
+def _call_openai(
+    prompt: str,
+    api_key: str,
+    api_base: str,
+    model: str,
+    *,
+    qwen_thinking: bool = True,
+    temperature: float | None = 0.3,
+    top_p: float | None = 0.8,
+    extra: dict | None = None,
+) -> str:
+    body: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if temperature is not None:
+        body["temperature"] = temperature
+    if top_p is not None:
+        body["top_p"] = top_p
+    if qwen_thinking:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+    if extra:
+        body.update(extra)
     response = requests.post(
         f"{api_base}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "top_p": 0.8,
-            "chat_template_kwargs": {"enable_thinking": False},
-        },
+        json=body,
         timeout=(10, 300),
     )
     if not response.ok:

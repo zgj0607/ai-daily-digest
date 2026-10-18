@@ -21,10 +21,14 @@ _zshrc_assign() {
 [ -n "${OPENAI_API_KEY:-}" ] || OPENAI_API_KEY="$(_zshrc_assign OPENAI_API_KEY)"
 [ -n "${OPENAI_API_BASE:-}" ] || OPENAI_API_BASE="$(_zshrc_assign OPENAI_API_BASE)"
 [ -n "${OPENAI_MODEL:-}" ] || OPENAI_MODEL="$(_zshrc_assign OPENAI_MODEL)"
-export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL
+[ -n "${DEEPSEEK_API_KEY:-}" ] || DEEPSEEK_API_KEY="$(_zshrc_assign DEEPSEEK_API_KEY)"
+[ -n "${MOONSHOT_API_KEY:-}" ] || MOONSHOT_API_KEY="$(_zshrc_assign MOONSHOT_API_KEY)"
+export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL DEEPSEEK_API_KEY MOONSHOT_API_KEY
 _cloud_key="$OPENAI_API_KEY"
 _cloud_base="$OPENAI_API_BASE"
 _cloud_model="$OPENAI_MODEL"
+_deepseek_key="$DEEPSEEK_API_KEY"
+_moonshot_key="$MOONSHOT_API_KEY"
 
 if [ -f "$PIPELINE_DIR/mac/.env" ]; then
   # shellcheck disable=SC1091
@@ -35,7 +39,13 @@ fi
 [ -n "$_cloud_key" ] && export OPENAI_API_KEY="$_cloud_key"
 [ -n "$_cloud_base" ] && export OPENAI_API_BASE="$_cloud_base"
 [ -n "$_cloud_model" ] && export OPENAI_MODEL="$_cloud_model"
-unset _cloud_key _cloud_base _cloud_model
+[ -n "$_deepseek_key" ] && export DEEPSEEK_API_KEY="$_deepseek_key"
+[ -n "$_moonshot_key" ] && export MOONSHOT_API_KEY="$_moonshot_key"
+unset _cloud_key _cloud_base _cloud_model _deepseek_key _moonshot_key
+export DEEPSEEK_API_BASE="${DEEPSEEK_API_BASE:-https://api.deepseek.com}"
+export DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-flash}"
+export MOONSHOT_API_BASE="${MOONSHOT_API_BASE:-https://api.moonshot.ai/v1}"
+export MOONSHOT_MODEL="${MOONSHOT_MODEL:-kimi-k2.6}"
 
 # 本地模型单独配置，不覆盖上面的云端 OPENAI_*
 export LOCAL_LLM_MODEL="qwen3.6-27b"
@@ -48,11 +58,18 @@ export AI_PC_MAC_ADDRESS="${AI_PC_MAC_ADDRESS:-74:56:3c:3f:2a:4d}"
 [ -z "$AI_PC_MAC_ADDRESS" ] && export AI_PC_MAC_ADDRESS="74:56:3c:3f:2a:4d"
 UBUNTU_HOST="$AI_UBUNTU_HOST"
 export LOCAL_LLM_API_BASE="http://${UBUNTU_HOST}:8000/v1"
+_channels="本地 ${LOCAL_LLM_MODEL}"
 if [ -n "${OPENAI_API_KEY:-}" ] && [ -n "${OPENAI_API_BASE:-}" ]; then
-  echo "[digest] 翻译通道: 本地 ${LOCAL_LLM_MODEL} + 云端 ${OPENAI_MODEL:-qwen} (${OPENAI_API_BASE})"
-else
-  echo "[digest] 翻译通道: 仅本地 ${LOCAL_LLM_MODEL}（未找到 OPENAI_API_KEY / OPENAI_API_BASE）"
+  _channels="${_channels} + 云端 ${OPENAI_MODEL:-qwen} (${OPENAI_API_BASE})"
 fi
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  _channels="${_channels} + DeepSeek ${DEEPSEEK_MODEL} (${DEEPSEEK_API_BASE})"
+fi
+if [ -n "${MOONSHOT_API_KEY:-}" ]; then
+  _channels="${_channels} + Kimi ${MOONSHOT_MODEL} (${MOONSHOT_API_BASE})"
+fi
+echo "[digest] 翻译通道: ${_channels}"
+unset _channels
 
 REMOTE_GPU="$PIPELINE_DIR/mac/scripts/remote-gpu.sh"
 REMOTE_POWER="$PIPELINE_DIR/mac/scripts/remote-power.sh"
