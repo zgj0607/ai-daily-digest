@@ -23,6 +23,9 @@ from digest.content import (
 )
 from digest.dates import parse_date, to_iso
 from digest.http import Fetcher
+from digest.perplexity import article as perplexity_article
+from digest.perplexity import is_blog as perplexity_blog
+from digest.perplexity import posts as perplexity_posts
 from digest.insight import enrich_insights
 from digest.report import SavedArticle, SourceReport, excerpt_from_body, write_blog_report
 from digest.state import ArticleRow, State
@@ -380,8 +383,14 @@ def _crawl_article(
 ) -> tuple[bool, str, SavedArticle | None]:
     """只负责抓取并写入 Obsidian 原文，不翻译。"""
     try:
-        html, page_url = fetcher.text_resolved(row.url)
-        article = extract_article(html, page_url, row.published, row.hint_kind)
+        if perplexity_blog(row.url.rsplit("/", 1)[0]):
+            article = perplexity_article(fetcher, row.url)
+            page_url = row.url
+            if article is None:
+                raise RuntimeError(f"不是 Perplexity 文章: {row.url}")
+        else:
+            html, page_url = fetcher.text_resolved(row.url)
+            article = extract_article(html, page_url, row.published, row.hint_kind)
         if len(article.body) < 80:
             raise RuntimeError("正文过短")
         if not article.title:
@@ -432,6 +441,11 @@ def _translate_saved(article: SavedArticle, translator: Translator, state: State
 
 
 def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
+    if perplexity_blog(source.index_url):
+        return {
+            url: _Item(url=url, title=title, published=to_iso(parse_date(published)) if published else "", hint_kind="page")
+            for url, title, published in perplexity_posts(fetcher)
+        }
     items: dict[str, _Item] = {}
     if source.sitemap_url:
         for url, lastmod in _sitemap_urls(fetcher, source.sitemap_url, 0):
