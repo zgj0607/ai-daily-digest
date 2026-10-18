@@ -155,11 +155,11 @@ def run(
     configure_llm_concurrency(settings.llm_concurrency)
     translator = Translator.from_env()
     crawl_workers = settings.article_concurrency
-    translate_workers = settings.llm_concurrency * max(1, translator.channels)
+    translate_workers = max(1, translator.slots)
     pipeline = (
         f"流水线: 发现={settings.source_concurrency}, "
         f"爬取={crawl_workers}, 翻译线程={translate_workers}"
-        f"（本地与每个云端模型各 {settings.llm_concurrency} 篇同时翻译）"
+        f"（本地同时 {settings.llm_concurrency} 篇，云端 Coding Plan 同时 8 篇）"
     )
     print(f"[digest] {pipeline}")
     view = _View(pipeline)

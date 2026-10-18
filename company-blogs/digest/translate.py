@@ -4,6 +4,7 @@ import json
 import os
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,13 +18,17 @@ LOCAL_DEFAULT_HOST = "192.168.110.38"
 LOCAL_DEFAULT_MODEL = "qwen3.6-27b"
 LOCAL_DEFAULT_API_KEY = "sk-litellm-local"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+# 一篇尽量一次请求。Coding Plan 每 5 小时只有 6000 次，按 8 段一批会把额度用在往返上。
+_ONE_CALL_CHARS = 18000
+_SPLIT_CHARS = 14000
 _LOCAL_BATCH = 8
 _channel_limit = 3
+_CLOUD_LIMIT = 8
 _HTTP = threading.local()
 
 
 def configure_llm_concurrency(limit: int) -> None:
-    """每个模型各自的并发上限。本地与云端分开计数。"""
+    """本地模型的并发上限。云端 Coding Plan 使用单独的更高上限。"""
     global _channel_limit
     _channel_limit = max(1, limit)
 
@@ -40,16 +45,17 @@ class _Block:
 
 
 class Translator:
-    def __init__(self, call, translate_batch: int = _LOCAL_BATCH, channels: int = 1) -> None:
+    def __init__(self, call, translate_batch: int = _LOCAL_BATCH, channels: int = 1, slots: int = 1) -> None:
         self._call = call
         self.translate_batch = translate_batch
         self.channels = channels
+        self.slots = slots
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Translator:
         _load_env_file(env_file or PROJECT_ROOT / ".env")
-        call, batch, channels = _build_client()
-        return cls(call, batch, channels)
+        call, batch, channels, slots = _build_client()
+        return cls(call, batch, channels, slots)
 
     def complete(self, prompt: str) -> str:
         """通用 LLM 补全（与翻译共用同一套 provider / 并发限流）。"""
@@ -90,7 +96,7 @@ class Translator:
             translated = self.translate_title(original_title) if want_title else original_title
             return translated, markdown
 
-        batches = [jobs[start : start + self.translate_batch] for start in range(0, len(jobs), self.translate_batch)]
+        batches = _pack_jobs(jobs, _ONE_CALL_CHARS, _SPLIT_CHARS)
 
         def worker(item: tuple[int, list[tuple[int, str]]]) -> tuple[dict[int, str], int, str]:
             batch_index, batch = item
@@ -107,7 +113,7 @@ class Translator:
             return found, missing, got_title
 
         # 各批并行发给当时有空的模型；模型名额仍由 call() 按每个模型限制
-        width = min(len(batches), max(1, self.channels * _channel_limit))
+        width = min(len(batches), max(1, self.slots))
         enumerated = list(enumerate(batches))
         if width == 1:
             results = [worker(item) for item in enumerated]
@@ -161,19 +167,26 @@ def _build_client():
     cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # 每个模型各自最多 _channel_limit 篇同时在译。限流只关闭该模型；超时、空返回和 5xx 只改试其余模型。
-    pool: list[tuple[str, object, bool]] = [
+    # 本地按 llm_concurrency。云端单独提高并发：每篇一次长请求，靠并行把墙钟压进几小时。
+    pool: list[tuple[str, object, bool, int]] = [
         (f"本地 Qwen ({local_base}, model={local_model})",
-         lambda prompt: _call_openai(prompt, local_key, local_base, local_model),
-         False),
+         lambda prompt: _call_openai(prompt, local_key, local_base, local_model, max_tokens=8192),
+         False,
+         _channel_limit),
     ]
     if cloud_key and cloud_base and cloud_base != local_base:
         pool.append((
             f"云端 Qwen ({cloud_base}, model={cloud_model or 'qwen'})",
             lambda prompt, key=cloud_key, base=cloud_base, model=cloud_model: _call_openai(
-                prompt, key, base, model or "qwen-plus", extra={"enable_thinking": False},
+                prompt,
+                key,
+                base,
+                model or "qwen-plus",
+                max_tokens=16384,
+                extra={"enable_thinking": False},
             ),
             True,
+            _CLOUD_LIMIT,
         ))
     fallbacks: list[tuple[str, object]] = []
     if gemini_key:
@@ -182,11 +195,11 @@ def _build_client():
     inflight = [0] * len(pool)
     closed: set[int] = set()
     cond = threading.Condition()
+    limits = [item[3] for item in pool]
     print(
-        "[translate] 每个模型同时 "
-        f"{_channel_limit} 篇: "
-        + " | ".join(name for name, _, _ in pool)
-        + "。限流或免费额度用尽只关闭该模型，其他失败改试其余模型"
+        "[translate] "
+        + " | ".join(f"{name} 同时 {limit} 篇" for name, _, _, limit in pool)
+        + "。并发超限会等待重试；5 小时额度用尽才关闭该模型"
     )
 
     def _opened(exclude: set[int]) -> list[int]:
@@ -207,7 +220,7 @@ def _build_client():
                     return None
                 opened.sort(key=lambda index: inflight[index])
                 for index in opened:
-                    if inflight[index] < _channel_limit:
+                    if inflight[index] < limits[index]:
                         inflight[index] += 1
                         return index
                 cond.wait()
@@ -218,7 +231,7 @@ def _build_client():
             cond.notify_all()
 
     def _invoke(index: int, prompt: str) -> str:
-        name, provider, _ = pool[index]
+        name, provider, _, _limit = pool[index]
         text = provider(prompt)
         if not str(text).strip():
             raise RuntimeError(f"{name} 返回内容为空")
@@ -227,23 +240,37 @@ def _build_client():
     def call(prompt: str) -> str:
         errors: list[str] = []
         tried: set[int] = set()
+        waits = 0
         while True:
             index = _reserve(tried)
             if index is None:
                 break
             tried.add(index)
-            name, _, is_cloud = pool[index]
+            name, _, _is_cloud, _limit = pool[index]
+            pause = 0.0
             try:
                 return _invoke(index, prompt)
             except Exception as exc:
                 errors.append(f"{name}: {exc}")
-                if is_cloud and _is_rate_limited(exc):
+                if _is_plan_exhausted(exc):
                     if _close_one(index):
-                        board.log_translate(f"[translate] {name} 触发限流或免费额度用尽，已关闭该模型，其余模型继续。原因: {exc}")
+                        board.log_translate(f"[translate] {name} 套餐额度用尽，已关闭该模型。原因: {exc}")
+                elif _is_concurrency_wait(exc) and waits < 8:
+                    waits += 1
+                    tried.discard(index)
+                    pause = min(5.0, 0.4 * waits)
+                    board.log_translate(f"[translate] {name} 并发超限，等待后重试。原因: {exc}")
+                elif _is_rate_limited(exc) and waits < 4:
+                    waits += 1
+                    tried.discard(index)
+                    pause = 15.0
+                    board.log_translate(f"[translate] {name} 触发限流，15 秒后重试，不关闭模型。原因: {exc}")
                 else:
                     board.log_translate(f"[translate] {name} 失败，改试其他模型。原因: {exc}")
             finally:
                 _release(index)
+            if pause:
+                time.sleep(pause)
         for name, provider in fallbacks:
             try:
                 text = provider(prompt)
@@ -254,7 +281,7 @@ def _build_client():
                 errors.append(f"{name}: {exc}")
         raise RuntimeError("所有翻译接口都失败: " + " | ".join(errors))
 
-    return call, _LOCAL_BATCH, len(pool)
+    return call, _LOCAL_BATCH, len(pool), sum(limits)
 
 
 def _http() -> requests.Session:
@@ -263,6 +290,40 @@ def _http() -> requests.Session:
         session = requests.Session()
         _HTTP.session = session
     return session
+
+
+def _pack_jobs(
+    jobs: list[tuple[int, str]],
+    one_call_chars: int,
+    split_chars: int,
+) -> list[list[tuple[int, str]]]:
+    """短文一次请求；更长的文章按字数切开，避免单次输出被截断。"""
+    total = sum(len(content) for _, content in jobs)
+    if total <= one_call_chars:
+        return [jobs]
+    batches: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] = []
+    size = 0
+    for job in jobs:
+        length = len(job[1])
+        if current and size + length > split_chars:
+            batches.append(current)
+            current = []
+            size = 0
+        current.append(job)
+        size += length
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _is_concurrency_wait(exc: BaseException) -> bool:
+    return "concurrency" in str(exc).lower()
+
+
+def _is_plan_exhausted(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(token in text for token in ("hour allocated quota", "week allocated quota", "month allocated quota"))
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
@@ -325,6 +386,7 @@ def _call_openai(
     qwen_thinking: bool = True,
     temperature: float | None = 0.3,
     top_p: float | None = 0.8,
+    max_tokens: int | None = None,
     extra: dict | None = None,
 ) -> str:
     body: dict = {
@@ -335,6 +397,8 @@ def _call_openai(
         body["temperature"] = temperature
     if top_p is not None:
         body["top_p"] = top_p
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
     if qwen_thinking:
         body["chat_template_kwargs"] = {"enable_thinking": False}
     if extra:
@@ -343,7 +407,7 @@ def _call_openai(
         f"{api_base}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json=body,
-        timeout=(10, 300),
+        timeout=(10, 600),
     )
     if not response.ok:
         raise RuntimeError(f"OpenAI-compatible API error ({response.status_code}): {response.text[:500]}")
