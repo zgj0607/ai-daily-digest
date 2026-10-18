@@ -177,8 +177,8 @@ sources:
   - id: meta
     name: Meta
     enabled: true
+    # sitemap 返回 403。文章在列表页，按 ?page= 翻页。
     index_url: https://ai.meta.com/blog/
-    sitemap_url: https://ai.meta.com/sitemap/ai_meta_com_sitemap.xml.gz
     include: '^https://ai.meta.com/blog/[^/]+$'
 
   - id: databricks

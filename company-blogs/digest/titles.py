@@ -71,13 +71,24 @@ def _english_notes(root: Path) -> list[tuple[Path, str, str]]:
 
 
 def _note_fields(path: Path) -> tuple[str, str]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return "", ""
-    end = text.find("\n---", 3) if text.startswith("---") else -1
-    head = text[3:end] if end != -1 else ""
+    head = _frontmatter(path)
     return _unquote(_TITLE.search(head)), _unquote(_SOURCE.search(head))
+
+
+def _frontmatter(path: Path) -> str:
+    """只读到 frontmatter 结束，不把正文读进内存。"""
+    try:
+        with path.open(encoding="utf-8") as handle:
+            if not handle.readline().startswith("---"):
+                return ""
+            lines: list[str] = []
+            for line in handle:
+                if line.startswith("---"):
+                    break
+                lines.append(line)
+    except OSError:
+        return ""
+    return "".join(lines)
 
 
 def _unquote(match: re.Match[str] | None) -> str:

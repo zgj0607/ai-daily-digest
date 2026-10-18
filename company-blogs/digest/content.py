@@ -48,7 +48,8 @@ class Article:
 
 def extract_article(html: str, url: str, hint_published: str = "", hint_kind: str = "") -> Article:
     soup = BeautifulSoup(html, "lxml")
-    published, date_source = _published(soup, hint_published, hint_kind)
+    post = _blog_post(html)
+    published, date_source = _published(soup, hint_published, hint_kind, post)
     title = _title(soup) or _slug_title(url)
     return Article(
         title=title,
@@ -56,14 +57,20 @@ def extract_article(html: str, url: str, hint_published: str = "", hint_kind: st
         date_source=date_source,
         author=_author(soup),
         description=_description(soup),
-        body=_body(html, url),
+        body=_body(html, url, post),
     )
 
 
-def _published(soup: BeautifulSoup, hint_published: str, hint_kind: str) -> tuple[datetime | None, str]:
-    found = _blog_date(soup)
-    if found:
-        return found, "page"
+def _published(
+    soup: BeautifulSoup,
+    hint_published: str,
+    hint_kind: str,
+    post: dict | None = None,
+) -> tuple[datetime | None, str]:
+    if post:
+        found = parse_date(str(post.get("publishedDate") or post.get("date") or ""))
+        if found:
+            return found, "page"
     for finder in (_jsonld_date, _meta_date, _posted_on):
         found = finder(soup)
         if found:
@@ -202,9 +209,9 @@ def _description(soup: BeautifulSoup) -> str:
     return ""
 
 
-def _body(html: str, url: str) -> str:
+def _body(html: str, url: str, post: dict | None = None) -> str:
     # GoDaddy Website Builder 把正文放在 window._BLOG_DATA，静态页面只剩页脚和 Cookie。
-    blog = _godaddy_blog_body(html)
+    blog = _godaddy_blog_body(post) if post else ""
     if len(blog) >= 80:
         return blog
     if "huggingface.co/blog/" in url:
@@ -263,21 +270,6 @@ _GHOST_HTML_REF = re.compile(r'ghostBlogData"\s*:\s*\{.*?"html"\s*:\s*"\$([0-9a-
 _FLIGHT_TAIL = re.compile(r"(?<=[>])\s*[0-9a-f]+:\[")
 
 
-def _blog_date(soup: BeautifulSoup) -> datetime | None:
-    post = _blog_post(_blog_script(soup))
-    if not post:
-        return None
-    return parse_date(str(post.get("publishedDate") or post.get("date") or ""))
-
-
-def _blog_script(soup: BeautifulSoup) -> str:
-    for script in soup.find_all("script"):
-        raw = script.string or ""
-        if _BLOG_DATA in raw:
-            return raw
-    return ""
-
-
 def _blog_post(html: str) -> dict | None:
     start = html.find(_BLOG_DATA)
     if start < 0:
@@ -294,10 +286,7 @@ def _blog_post(html: str) -> dict | None:
     return post if isinstance(post, dict) else None
 
 
-def _godaddy_blog_body(html: str) -> str:
-    post = _blog_post(html)
-    if not post:
-        return ""
+def _godaddy_blog_body(post: dict) -> str:
     full = post.get("fullContent")
     try:
         raw = json.loads(full) if isinstance(full, str) else full
@@ -337,6 +326,8 @@ def _godaddy_blog_body(html: str) -> str:
 
 def _draft_inline(block: dict, entities: dict) -> str:
     text = str(block.get("text") or "")
+    if not block.get("inlineStyleRanges") and not block.get("entityRanges"):
+        return text
     spans: list[tuple[int, int, str, str]] = []
     for item in block.get("inlineStyleRanges") or []:
         style = item.get("style")

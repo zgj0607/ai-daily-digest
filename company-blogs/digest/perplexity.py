@@ -34,7 +34,7 @@ def posts(fetcher: Fetcher) -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
     for item in _query(fetcher, _LIST) or []:
         slug = str(item.get("slug") or "")
-        if not _SLUG.fullmatch(f"{_ORIGIN}/{slug}"):
+        if not re.fullmatch(r"[A-Za-z0-9-]+", slug):
             continue
         found.append((f"{_ORIGIN}/{slug}", str(item.get("title") or ""), str(item.get("publishedAt") or "")))
     return found
@@ -153,16 +153,16 @@ def _image(block: dict) -> str:
 
 
 def _table(block: dict) -> str:
-    rows: list[str] = []
-    for row in block.get("rows") or []:
-        cells = [_spans_of(cell).replace("|", "\\|") for cell in row.get("cells") or []]
-        if cells:
-            rows.append("| " + " | ".join(cells) + " |")
+    rows = [
+        [_spans_of(cell).replace("|", "\\|") for cell in row.get("cells") or []]
+        for row in block.get("rows") or []
+    ]
+    rows = [cells for cells in rows if cells]
     if not rows:
         return ""
-    width = max(row.count("|") - 1 for row in rows)
-    rule = "| " + " | ".join("---" for _ in range(width)) + " |"
-    return "\n".join([rows[0], rule, *rows[1:]])
+    rule = "| " + " | ".join("---" for _ in rows[0]) + " |"
+    lines = ["| " + " | ".join(cells) + " |" for cells in rows]
+    return "\n".join([lines[0], rule, *lines[1:]])
 
 
 def _spans_of(cell: dict) -> str:

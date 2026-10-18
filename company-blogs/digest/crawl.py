@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from queue import Queue
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 from digest.config import Settings, Source
@@ -23,9 +23,7 @@ from digest.content import (
 )
 from digest.dates import parse_date, to_iso
 from digest.http import Fetcher
-from digest.perplexity import article as perplexity_article
-from digest.perplexity import is_blog as perplexity_blog
-from digest.perplexity import posts as perplexity_posts
+from digest import perplexity
 from digest.insight import enrich_insights
 from digest.report import SavedArticle, SourceReport, excerpt_from_body, write_blog_report
 from digest.state import ArticleRow, State
@@ -383,14 +381,12 @@ def _crawl_article(
 ) -> tuple[bool, str, SavedArticle | None]:
     """只负责抓取并写入 Obsidian 原文，不翻译。"""
     try:
-        if perplexity_blog(row.url.rsplit("/", 1)[0]):
-            article = perplexity_article(fetcher, row.url)
-            page_url = row.url
-            if article is None:
-                raise RuntimeError(f"不是 Perplexity 文章: {row.url}")
-        else:
+        article = perplexity.article(fetcher, row.url)
+        if article is None:
             html, page_url = fetcher.text_resolved(row.url)
             article = extract_article(html, page_url, row.published, row.hint_kind)
+        else:
+            page_url = row.url
         if len(article.body) < 80:
             raise RuntimeError("正文过短")
         if not article.title:
@@ -441,10 +437,10 @@ def _translate_saved(article: SavedArticle, translator: Translator, state: State
 
 
 def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
-    if perplexity_blog(source.index_url):
+    if perplexity.is_blog(source.index_url):
         return {
             url: _Item(url=url, title=title, published=to_iso(parse_date(published)) if published else "", hint_kind="page")
-            for url, title, published in perplexity_posts(fetcher)
+            for url, title, published in perplexity.posts(fetcher)
         }
     items: dict[str, _Item] = {}
     if source.sitemap_url:
@@ -471,15 +467,41 @@ def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
 
 
 _HREF = re.compile(r"""href=["']([^"'#]+)""", re.I)
+_NEXT_HREF = re.compile(
+    r"""<a\b[^>]*href=["']([^"']+)["'][^>]*\brel=["']next["']"""
+    r"""|<a\b[^>]*\brel=["']next["'][^>]*href=["']([^"']+)["']""",
+    re.I,
+)
 
 
 def _index_links(fetcher: Fetcher, page_url: str) -> list[str]:
-    """从列表页抽出文章链接（sitemap 未收录时的补充）。"""
-    html = fetcher.text(page_url)
+    """从列表页抽出文章链接。同一路径上的 ?page= 会继续翻页。"""
+    seen_pages: set[str] = set()
     seen: dict[str, None] = {}
-    for href in _HREF.findall(html):
-        seen.setdefault(urljoin(page_url, href.strip()), None)
+    current = page_url
+    for _ in range(80):
+        if current in seen_pages:
+            break
+        seen_pages.add(current)
+        html = fetcher.text(current)
+        for href in _HREF.findall(html):
+            seen.setdefault(urljoin(current, href.strip()), None)
+        nxt = _next_index(html, current)
+        if not nxt:
+            break
+        current = nxt
     return list(seen)
+
+
+def _next_index(html: str, page_url: str) -> str:
+    match = _NEXT_HREF.search(html)
+    if not match:
+        return ""
+    href = urljoin(page_url, (match.group(1) or match.group(2)).strip())
+    same_path = urlparse(href).path.rstrip("/") == urlparse(page_url).path.rstrip("/")
+    if not same_path or "page=" not in urlparse(href).query:
+        return ""
+    return href
 
 
 def _normalize(url: str) -> str:
