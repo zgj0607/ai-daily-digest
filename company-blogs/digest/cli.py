@@ -23,7 +23,6 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--article-concurrency", type=int, help="爬取并发（默认 3）")
     run_p.add_argument("--source-concurrency", type=int, help="发现并发（默认 3）")
     run_p.add_argument("--llm-concurrency", type=int, help="翻译/LLM 并发（默认 3）")
-    run_p.add_argument("--summary", type=Path, help="额外复制简报到该路径")
 
     status_p = sub.add_parser("status", help="查看每个来源的爬取进度")
     status_p.add_argument("--state", type=Path, help="覆盖进度数据库路径")
@@ -57,4 +56,4 @@ def main(argv: list[str] | None = None) -> int:
         return run_titles(settings)
     if args.command == "clippings":
         return run_clippings(settings, args.output_dir)
-    return run(settings, only=args.source, limit=args.limit, summary_path=args.summary)
+    return run(settings, only=args.source, limit=args.limit)

@@ -6,7 +6,6 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from queue import Queue
 from urllib.parse import urljoin, urlparse
@@ -27,11 +26,27 @@ from digest.content import (
 from digest.dates import parse_date, to_iso
 from digest.http import Fetcher
 from digest import perplexity
-from digest.insight import enrich_insights
-from digest.report import SavedArticle, SourceReport, excerpt_from_body, write_blog_report
 from digest.state import ArticleRow, State
 from digest.translate import Translator, configure_llm_concurrency
 from digest.ui import board
+
+
+@dataclass
+class SourceReport:
+    source_id: str
+    name: str
+    discovered: int
+    saved: int
+    failed: int
+    error: str = ""
+
+
+@dataclass
+class SavedArticle:
+    source_id: str
+    title: str
+    url: str
+    filepath: Path
 
 
 @dataclass
@@ -150,10 +165,8 @@ def run(
     settings: Settings,
     only: str | None = None,
     limit: int | None = None,
-    summary_path: Path | None = None,
 ) -> int:
     sources = settings.enabled_sources(only)
-    source_by_id = {s.id: s for s in sources}
     state = State(settings.state_db)
     fetcher = Fetcher(settings.user_agent, settings.request_interval_seconds)
     configure_llm_concurrency(settings.llm_concurrency)
@@ -170,7 +183,6 @@ def run(
     progress = _Progress(view)
 
     reports = {s.id: SourceReport(s.id, s.name, 0, 0, 0) for s in sources}
-    this_run: list[SavedArticle] = []
     translate_q: Queue[SavedArticle | object] = Queue()
     translated_lock = threading.Lock()
     translated_ok = 0
@@ -211,16 +223,11 @@ def run(
         # 上次没译完的笔记全部进队列，和本次新文一起翻译
         backlog = state.needs_translate()
         for row in backlog:
-            source = source_by_id.get(row.source_id)
-            name = source.name if source else row.source_id
             translate_q.put(
                 SavedArticle(
                     source_id=row.source_id,
-                    source_name=name,
                     title=row.title,
                     url=row.url,
-                    published=row.published,
-                    description="",
                     filepath=Path(row.filepath),
                 )
             )
@@ -275,7 +282,6 @@ def run(
                         state.mark_failed(source.id, row.url, message)
                     if ok and saved:
                         reports[source.id].saved += 1
-                        this_run.append(saved)
                         translate_q.put(saved)
                         board.log_crawl(f"[{source.id}] 已落盘 {message}")
                         progress.note_crawl(True)
@@ -306,28 +312,6 @@ def run(
         else:
             print(f"{item.name}: 发现 {item.discovered}，本次落盘 {item.saved}，失败 {item.failed}")
     print(f"合计: 落盘 {saved}，爬取失败 {failed}，翻译成功 {translated_ok}，翻译失败 {translated_fail}")
-
-    highlights = ""
-    if this_run:
-        highlights = enrich_insights(
-            this_run,
-            translator,
-            concurrency=settings.llm_concurrency * max(1, translator.channels),
-        )
-
-    report_path = settings.output_dir / f"{date.today().strftime('%Y%m%d')}-AI公司博客简报.md"
-    write_blog_report(
-        report_path,
-        items,
-        this_run,
-        source_total=len(sources),
-        highlights=highlights,
-    )
-    print(f"[digest] 博客简报已写入 {report_path}")
-    if summary_path is not None and summary_path.resolve() != report_path.resolve():
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(report_path.read_text(encoding="utf-8"), encoding="utf-8")
-        print(f"[digest] 简报副本已写入 {summary_path}")
     return 1 if items and all(i.error for i in items) else 0
 
 
@@ -395,7 +379,6 @@ def _crawl_article(
             raise RuntimeError("正文过短")
         if not article.title:
             article.title = row.title or article.title
-        description = excerpt_from_body(article.body, article.description)
         article.body = absolutize_images(article.body, page_url)
         path = write_markdown(settings.output_dir, source.name, article, page_url)
         if _normalize(row.url) != page_url:
@@ -407,11 +390,8 @@ def _crawl_article(
             state.mark_translated(source.id, page_url, title=article.title, filepath=str(path))
         saved = SavedArticle(
             source_id=source.id,
-            source_name=source.name,
             title=article.title,
             url=row.url,
-            published=published,
-            description=description,
             filepath=path,
         )
         return True, f"{path.parent.name}/{path.name}", saved

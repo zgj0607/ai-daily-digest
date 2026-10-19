@@ -166,8 +166,6 @@ esac
 DATE=$(date +%Y%m%d)
 OUTPUT_FILE="/tmp/${DATE}-RSS简报.md"
 OBSIDIAN_PATH="/Users/zhou/Documents/PycharmProject/my-kb/raw/clippings/${DATE}-RSS简报.md"
-BLOG_OBSIDIAN_DIR="/Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs"
-BLOG_SUMMARY="${BLOG_OBSIDIAN_DIR}/${DATE}-AI公司博客简报.md"
 export DIGEST_ENSURE_LLM_CMD="bash \"$DIGEST_DIR/run_digest.sh\" --ensure-llm"
 DIGEST_STATUS=0
 BLOG_STATUS=0
@@ -195,7 +193,7 @@ run_blogs() {
   cd "$DIGEST_DIR"
   echo "[digest] 开始抓取 AI 公司博客..."
   set +e
-  (cd "$DIGEST_DIR/company-blogs" && python3 -m digest run --summary "$BLOG_SUMMARY")
+  (cd "$DIGEST_DIR/company-blogs" && python3 -m digest run)
   BLOG_STATUS=$?
   set -e
   if [ "$BLOG_STATUS" -ne 0 ]; then
@@ -272,25 +270,6 @@ if [ "$MODE" = "daily" ] || [ "$MODE" = "all" ]; then
     fi
   elif [ "$DIGEST_STATUS" -ne 0 ]; then
     echo "[digest] 警告: digest 失败 (exit=$DIGEST_STATUS)"
-  fi
-fi
-
-if [ "$MODE" = "blogs" ] || [ "$MODE" = "all" ]; then
-  if [ -f "$BLOG_SUMMARY" ]; then
-    blog_content=$(
-      sed '/^## 📊 数据概览/,$d; /^|/d; /^```mermaid/,/^```$/d; /<details>/,/<\/details>/d' "$BLOG_SUMMARY" \
-      | head -c 3500
-    )
-    echo "[digest] 发送飞书（公司博客简报）..."
-    if ! send_feishu "${blog_content}
-
-...
-
-*完整简报已保存到 Obsidian: ai-company-blogs/${DATE}-AI公司博客简报.md*"; then
-      echo "[digest] 警告: 公司博客飞书发送失败或超时（简报已在 Obsidian）"
-    fi
-  elif [ "$BLOG_STATUS" -ne 0 ]; then
-    echo "[digest] 警告: 公司博客无简报可发送"
   fi
 fi
 
