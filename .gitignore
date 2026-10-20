@@ -11,3 +11,4 @@ assets/.DS_Store
 scripts/.DS_Store
 company-blogs/digest/.DS_Store
 company-blogs/.DS_Store
+company-blogs/digest/__pycache__/

@@ -379,3 +379,245 @@ sources:
     index_url: https://blog.google/innovation-and-ai/models-and-research/google-labs/
     sitemap_url: https://blog.google/en-us/sitemap.xml
     include: '^https://blog.google/innovation-and-ai/models-and-research/google-labs/[^/]+$'
+
+  - id: retell
+    name: Retell
+    enabled: true
+    # 列表在 /blogs，文章在 /blog/slug。
+    index_url: https://www.retellai.com/blogs
+    sitemap_url: https://www.retellai.com/sitemap.xml
+    include: '^https://www.retellai.com/blog/[^/]+$'
+
+  - id: robin
+    name: Robin
+    enabled: true
+    index_url: https://robinai.com/news-and-resources/blog
+    sitemap_url: https://robinai.com/sitemaps-1-sitemap.xml
+    include: '^https://robinai.com/news-and-resources/blog/[^/]+$'
+
+  - id: mercor
+    name: Mercor
+    enabled: true
+    index_url: https://www.mercor.com/blog/
+    sitemap_url: https://www.mercor.com/sitemap.xml
+    include: '^https://www.mercor.com/blog/[^/]+$'
+    exclude:
+      - '^https://www.mercor.com/blog/\d+$'
+
+  - id: crescendo
+    name: Crescendo
+    enabled: true
+    index_url: https://www.crescendo.ai/blog
+    sitemap_url: https://www.crescendo.ai/sitemap.xml
+    include: '^https://www.crescendo.ai/blog/[^/]+$'
+
+  - id: clay
+    name: Clay
+    enabled: true
+    index_url: https://www.clay.com/blog
+    sitemap_url: https://www.clay.com/sitemap.xml
+    include: '^https://www.clay.com/blog/[^/]+$'
+
+  - id: wonderful
+    name: Wonderful
+    enabled: true
+    index_url: https://www.wonderful.ai/blog
+    sitemap_url: https://www.wonderful.ai/sitemap.xml
+    include: '^https://www.wonderful.ai/blog-articles/[^/]+$'
+
+  - id: hume
+    name: Hume
+    enabled: true
+    index_url: https://www.hume.ai/blog
+    sitemap_url: https://www.hume.ai/sitemap.xml
+    include: '^https://(?:www\.)?hume.ai/blog/[^/]+$'
+
+  - id: torq
+    name: Torq
+    enabled: true
+    index_url: https://torq.io/blog/
+    sitemap_url: https://torq.io/sitemap_index.xml
+    include: '^https://torq.io/blog/[^/]+$'
+
+  - id: nabla
+    name: Nabla
+    enabled: true
+    index_url: https://www.nabla.com/blog
+    sitemap_url: https://www.nabla.com/sitemap.xml
+    include: '^https://(?:www\.)?nabla.com/blog/[^/]+$'
+
+  - id: hebbia
+    name: Hebbia
+    enabled: true
+    index_url: https://www.hebbia.com/blog
+    sitemap_url: https://www.hebbia.com/sitemap.xml
+    include: '^https://www.hebbia.com/blog/[^/]+$'
+
+  - id: fyxer
+    name: Fyxer
+    enabled: true
+    index_url: https://www.fyxer.com/blog
+    sitemap_url: https://www.fyxer.com/sitemap.xml
+    include: '^https://www.fyxer.com/blog/[^/]+$'
+
+  - id: legartis
+    name: Legartis
+    enabled: true
+    index_url: https://www.legartis.ai/blog
+    sitemap_url: https://www.legartis.ai/sitemap.xml
+    include: '^https://www.legartis.ai/blog/[^/]+$'
+
+  - id: artisan
+    name: Artisan
+    enabled: true
+    index_url: https://www.artisan.co/blog
+    sitemap_url: https://www.artisan.co/sitemap.xml
+    include: '^https://www.artisan.co/blog/[^/]+$'
+
+  - id: kore
+    name: Kore
+    enabled: true
+    index_url: https://www.kore.ai/blog
+    sitemap_url: https://www.kore.ai/sitemap.xml
+    include: '^https://www.kore.ai/blog/[^/]+$'
+
+  - id: zowie
+    name: Zowie
+    enabled: true
+    index_url: https://getzowie.com/blog
+    sitemap_url: https://getzowie.com/sitemap.xml
+    include: '^https://getzowie.com/blog/[^/]+$'
+
+  - id: gorgias
+    name: Gorgias
+    enabled: true
+    index_url: https://www.gorgias.com/blog
+    sitemap_url: https://www.gorgias.com/sitemap.xml
+    include: '^https://www.gorgias.com/blog/[^/]+$'
+
+  - id: freddy
+    name: Freddy
+    enabled: true
+    index_url: https://www.freshworks.com/theworks/
+    sitemap_url: https://www.freshworks.com/sitemaps.xml
+    include: '^https://www.freshworks.com/theworks/[^/]+/[^/]+$'
+
+  - id: 11x
+    name: 11xAI
+    enabled: true
+    index_url: https://www.11x.ai/blog
+    sitemap_url: https://www.11x.ai/sitemap.xml
+    include: '^https://www.11x.ai/blog/[^/]+$'
+
+  - id: lindy
+    name: Lindy
+    enabled: true
+    index_url: https://www.lindy.ai/blog
+    sitemap_url: https://www.lindy.ai/sitemap.xml
+    include: '^https://www.lindy.ai/blog/[^/]+$'
+
+  - id: zendesk
+    name: Zendesk
+    enabled: true
+    index_url: https://www.zendesk.com/blog/ai/
+    sitemap_url: https://www.zendesk.com/generated_sitemap.xml
+    include: '^https://www.zendesk.com/blog/ai/.+'
+    exclude:
+      - '^https://www.zendesk.com/blog/ai/(?:chatbots|agentic-ai|generative-ai|workflow-automation|productivity)$'
+
+  - id: ada
+    name: Ada
+    enabled: true
+    index_url: https://docs.ada.ai/blog
+    include: '^https://docs.ada.ai/blog/[^/]+$'
+
+  - id: forethought
+    name: Forethought
+    enabled: true
+    index_url: https://forethought.ai/blog
+    sitemap_url: https://forethought.ai/sitemap.xml
+    include: '^https://forethought.ai/blog/[^/]+$'
+
+  - id: haptik
+    name: Haptik
+    enabled: true
+    index_url: https://www.haptik.ai/blog
+    sitemap_url: https://www.haptik.ai/sitemap.xml
+    include: '^https://www.haptik.ai/blog/[^/]+$'
+
+  - id: haptik-tech
+    name: Haptik
+    enabled: true
+    index_url: https://www.haptik.ai/tech
+    sitemap_url: https://www.haptik.ai/sitemap.xml
+    include: '^https://www.haptik.ai/tech/[^/]+$'
+
+  - id: zapier
+    name: Zapier
+    enabled: true
+    index_url: https://zapier.com/blog/
+    sitemap_url: https://zapier.com/blog/sitemap.xml
+    include: '^https://zapier.com/blog/[^/]+$'
+    exclude:
+      - '^https://zapier.com/blog/all-articles$'
+
+  - id: pine
+    name: Pine
+    enabled: true
+    # 文章在 cms-sitemap，不在主 sitemap。标签页 /blog/tag/ 不匹配。
+    index_url: https://pine.im/blog
+    sitemap_url: https://pine.im/cms-sitemap.xml
+    include: '^https://pine.im/blog/[^/]+$'
+
+  - id: yuma
+    name: Yuma
+    enabled: true
+    index_url: https://yuma.ai/blogs
+    sitemap_url: https://yuma.ai/sitemap.xml
+    include: '^https://yuma.ai/blogs/[^/]+$'
+
+  - id: auralis
+    name: Auralis
+    enabled: true
+    index_url: https://auralis.ai/blog/
+    sitemap_url: https://auralis.ai/sitemap.xml
+    include: '^https://auralis.ai/blog/[^/]+$'
+
+  - id: digitalgenius
+    name: DigitalGenius
+    enabled: true
+    index_url: https://www.digitalgenius.com/resources/blog
+    sitemap_url: https://www.digitalgenius.com/sitemap.xml
+    include: '^https://www.digitalgenius.com/resources/blog/[^/]+$'
+
+  - id: consio
+    name: Consio
+    enabled: true
+    # 首页不是博客，文章在 /blog。
+    index_url: https://www.consio.ai/blog
+    sitemap_url: https://www.consio.ai/sitemap.xml
+    include: '^https://www.consio.ai/blog/[^/]+$'
+
+  - id: asapp
+    name: ASAPP
+    enabled: true
+    index_url: https://www.asapp.com/blog
+    sitemap_url: https://www.asapp.com/sitemap.xml
+    include: '^https://www.asapp.com/blog/[^/]+$'
+
+  - id: poly
+    name: PolyAI
+    enabled: true
+    # 列表在 /resources/blog，文章在 /blog/slug。不含案例、活动、指南。
+    index_url: https://poly.ai/resources/blog
+    sitemap_url: https://poly.ai/sitemap.xml
+    include: '^https://poly.ai/blog/[^/]+$'
+    exclude:
+      - '^https://poly.ai/blog/rss\.xml$'
+
+  - id: parloa
+    name: Parloa
+    enabled: true
+    index_url: https://www.parloa.com/blog/
+    sitemap_url: https://www.parloa.com/sitemap.xml
+    include: '^https://www.parloa.com/blog/[^/]+$'
