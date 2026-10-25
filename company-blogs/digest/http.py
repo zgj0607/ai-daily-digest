@@ -14,6 +14,8 @@ _META_REFRESH_REV = re.compile(
     r"""<meta\b[^>]*content=["'][^"']*?url=([^"'\s>]+)[^"']*["'][^>]*http-equiv=["']refresh["']""",
     re.I,
 )
+# 浮动的 chrome 别名目前会被 Sequoia 的 Cloudflare 直接 403。按实测稳定的版本依次尝试。
+_BROWSER_PROFILES = ("chrome124", "safari184", "chrome120")
 
 
 class Fetcher:
@@ -39,11 +41,24 @@ class Fetcher:
         if session is None:
             from curl_cffi import requests as browser_requests
 
-            session = browser_requests.Session(impersonate="chrome")
+            profile = _BROWSER_PROFILES[getattr(self._local, "profile", 0) % len(_BROWSER_PROFILES)]
+            session = browser_requests.Session(impersonate=profile)
             self._local.session = session
             with self._sessions_lock:
                 self._sessions.append(session)
         return session
+
+    def _rotate_browser(self) -> None:
+        """当前指纹被 Cloudflare 拦住时换下一个，并丢掉这次 403 留下的 cookie。"""
+        current = getattr(self._local, "session", None)
+        self._local.session = None
+        self._local.profile = getattr(self._local, "profile", 0) + 1
+        if current is None:
+            return
+        current.close()
+        with self._sessions_lock:
+            if current in self._sessions:
+                self._sessions.remove(current)
 
     def _rate_limit(self) -> None:
         """只在限速时持锁；网络 IO 在锁外进行。"""
@@ -62,6 +77,9 @@ class Fetcher:
             except OSError as exc:
                 last_error = exc
                 time.sleep(2 ** attempt)
+                continue
+            if response.status_code == 403 and _cloudflare_blocked(response):
+                self._rotate_browser()
                 continue
             if response.status_code in {429, 500, 502, 503, 504}:
                 last_error = RuntimeError(f"HTTP {response.status_code}")
@@ -96,6 +114,14 @@ class Fetcher:
 
     def bytes(self, url: str) -> bytes:
         return self.get(url).content
+
+
+def _cloudflare_blocked(response) -> bool:
+    server = (response.headers.get("server") or "").lower()
+    if "cloudflare" not in server and "cf-ray" not in response.headers:
+        return False
+    snippet = response.text[:2000].lower()
+    return "attention required" in snippet or "just a moment" in snippet
 
 
 def _html_redirect(html: str, base_url: str) -> str:
