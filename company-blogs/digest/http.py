@@ -19,9 +19,8 @@ _META_REFRESH_REV = re.compile(
 class Fetcher:
     """全局限速 + 每线程独立 Session。请求使用浏览器指纹，避免站点按爬虫拦截。"""
 
-    def __init__(self, user_agent: str, interval_seconds: float) -> None:
+    def __init__(self, interval_seconds: float) -> None:
         self.interval_seconds = interval_seconds
-        self.user_agent = user_agent
         self.timeout = (15, 40)
         self._last_request = 0.0
         self._rate_lock = threading.Lock()

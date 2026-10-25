@@ -1,7 +1,6 @@
 output_dir: /Users/zhou/Documents/PycharmProject/my-kb/raw/ai-company-blogs
 state_db: state/crawl.sqlite
 request_interval_seconds: 0.3
-user_agent: ai-company-blog-digest/0.1
 max_attempts: 3
 # 并行：发现 / 爬取落盘（IO）/ 翻译。llm_concurrency 是本地模型并发。本地上下文 8096 token，按段落切开。云端 Coding Plan 从 8 路加到最多 20 路。
 source_concurrency: 3

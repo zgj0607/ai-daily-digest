@@ -30,7 +30,6 @@ class Settings:
     output_dir: Path
     state_db: Path
     request_interval_seconds: float
-    user_agent: str
     max_attempts: int
     source_concurrency: int
     article_concurrency: int
@@ -82,7 +81,6 @@ def load_settings(path: Path | None = None) -> Settings:
         output_dir=resolve(raw.get("output_dir"), "output"),
         state_db=resolve(raw.get("state_db"), "state/crawl.sqlite"),
         request_interval_seconds=float(raw.get("request_interval_seconds") or 0.3),
-        user_agent=str(raw.get("user_agent") or "ai-company-blog-digest/0.1"),
         max_attempts=int(raw.get("max_attempts") or 3),
         source_concurrency=max(1, int(raw.get("source_concurrency") or 3)),
         article_concurrency=max(1, int(raw.get("article_concurrency") or 3)),

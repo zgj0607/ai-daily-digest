@@ -2,15 +2,13 @@
 from __future__ import annotations
 
 import gzip
-import html as html_lib
-import json
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Queue
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
+from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 from bs4 import BeautifulSoup
@@ -170,7 +168,7 @@ def run(
 ) -> int:
     sources = settings.enabled_sources(only)
     state = State(settings.state_db)
-    fetcher = Fetcher(settings.user_agent, settings.request_interval_seconds)
+    fetcher = Fetcher(settings.request_interval_seconds)
     configure_llm_concurrency(settings.llm_concurrency)
     translator = Translator.from_env()
     crawl_workers = settings.article_concurrency
@@ -501,7 +499,6 @@ def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
     return items
 
 
-_HREF = re.compile(r"""href=["']([^"'#]+)""", re.I)
 _NEXT_HREF = re.compile(
     r"""<a\b[^>]*href=["']([^"']+)["'][^>]*\brel=["']next["']"""
     r"""|<a\b[^>]*\brel=["']next["'][^>]*href=["']([^"']+)["']""",
@@ -512,7 +509,7 @@ _NEXT_HREF = re.compile(
 def _index_links(fetcher: Fetcher, page_url: str) -> tuple[list[str], dict[str, str]]:
     """从列表页抽出文章链接和卡片上的发表日期。同一路径上的 ?page= 会继续翻页。"""
     seen_pages: set[str] = set()
-    seen: dict[str, None] = {}
+    seen: set[str] = set()
     dated: dict[str, str] = {}
     current = page_url
     for _ in range(80):
@@ -520,10 +517,9 @@ def _index_links(fetcher: Fetcher, page_url: str) -> tuple[list[str], dict[str, 
             break
         seen_pages.add(current)
         html = fetcher.text(current)
-        for href in _HREF.findall(html):
-            seen.setdefault(urljoin(current, href.strip()), None)
         for anchor in BeautifulSoup(html, "lxml").find_all("a", href=True):
             raw = urljoin(current, anchor["href"].strip())
+            seen.add(raw)
             url = _normalize(raw)
             if url in dated:
                 continue
@@ -571,28 +567,28 @@ def _next_index(html: str, page_url: str) -> str:
     return _inertia_next(html, page_url)
 
 
+_INERTIA_NEXT = re.compile(r"&quot;pagination&quot;:\{(?:(?!\}).)*?&quot;next&quot;:(\d+)")
+
+
 def _inertia_next(html: str, page_url: str) -> str:
     """下一页页码在 data-page 里，页面上的 Next 没有 href。"""
-    match = re.search(r'data-page="([^"]+)"', html)
+    match = _INERTIA_NEXT.search(html)
     if not match:
         return ""
-    try:
-        data = json.loads(html_lib.unescape(match.group(1)))
-    except json.JSONDecodeError:
-        return ""
-    nxt = ((data.get("props") or {}).get("pagination") or {}).get("next")
-    if not isinstance(nxt, int) or nxt < 2:
-        return ""
-    parts = urlsplit(page_url)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query["page"] = str(nxt)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+    nxt = match.group(1)
+    if re.search(r"[?&]page=\d+", page_url):
+        return re.sub(r"([?&]page=)\d+", rf"\g<1>{nxt}", page_url, count=1)
+    joiner = "&" if "?" in page_url else "?"
+    return f"{page_url}{joiner}page={nxt}"
 
 
 def _article_url(url: str) -> bool:
-    """丢掉 javascript:void(0) 这类被拼进博客域名的假链接。"""
+    """丢掉 javascript:void(0) 以及被拼进博客域名的 javascript(0):void。"""
     parsed = urlparse(url)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and "javascript" not in url.lower()
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    lowered = url.lower()
+    return "javascript:" not in lowered and "javascript(0)" not in lowered
 
 
 def _normalize(url: str) -> str:
