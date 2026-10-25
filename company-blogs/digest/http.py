@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import threading
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 # OpenRouter 等站点对短链接返回 200 + meta refresh，而不是 HTTP 重定向。
 _META_REFRESH = re.compile(
@@ -29,6 +29,9 @@ class Fetcher:
         self._local = threading.local()
         self._sessions: list = []
         self._sessions_lock = threading.Lock()
+        self._serial_hosts: set[str] = set()
+        self._host_locks: dict[str, threading.Lock] = {}
+        self._serial_guard = threading.Lock()
 
     def close(self) -> None:
         with self._sessions_lock:
@@ -48,17 +51,24 @@ class Fetcher:
                 self._sessions.append(session)
         return session
 
-    def _rotate_browser(self) -> None:
-        """当前指纹被 Cloudflare 拦住时换下一个，并丢掉这次 403 留下的 cookie。"""
+    def _drop_session(self) -> None:
         current = getattr(self._local, "session", None)
         self._local.session = None
-        self._local.profile = getattr(self._local, "profile", 0) + 1
         if current is None:
             return
         current.close()
         with self._sessions_lock:
             if current in self._sessions:
                 self._sessions.remove(current)
+
+    def _rotate_browser(self) -> None:
+        """当前指纹被 Cloudflare 拦住时换下一个，并丢掉这次 403 留下的 cookie。"""
+        self._drop_session()
+        self._local.profile = getattr(self._local, "profile", 0) + 1
+
+    def _reset_browser(self) -> None:
+        self._drop_session()
+        self._local.profile = 0
 
     def _rate_limit(self) -> None:
         """只在限速时持锁；网络 IO 在锁外进行。"""
@@ -68,9 +78,43 @@ class Fetcher:
                 time.sleep(self.interval_seconds - elapsed)
             self._last_request = time.monotonic()
 
+    def _host(self, url: str) -> str:
+        return (urlparse(url).hostname or "").lower()
+
+    def _is_serial(self, host: str) -> bool:
+        with self._serial_guard:
+            return host in self._serial_hosts
+
+    def _mark_serial(self, host: str) -> None:
+        with self._serial_guard:
+            self._serial_hosts.add(host)
+            self._host_locks.setdefault(host, threading.Lock())
+
+    def _host_lock(self, host: str) -> threading.Lock:
+        with self._serial_guard:
+            lock = self._host_locks.get(host)
+            if lock is None:
+                lock = threading.Lock()
+                self._host_locks[host] = lock
+            return lock
+
     def get(self, url: str):
-        last_error: Exception | None = None
-        for attempt in range(3):
+        host = self._host(url)
+        if self._is_serial(host):
+            with self._host_lock(host):
+                return self._get(url, serial=True)
+        try:
+            return self._get(url, serial=False)
+        except _CloudflareBlock:
+            # 并行请求会触发整站 403。改成这个域名一次只发一个请求再试。
+            self._mark_serial(host)
+            with self._host_lock(host):
+                return self._get(url, serial=True)
+
+    def _get(self, url: str, serial: bool):
+        last_error: Exception = RuntimeError("没有响应")
+        attempts = len(_BROWSER_PROFILES) if serial else 1
+        for attempt in range(attempts):
             self._rate_limit()
             try:
                 response = self._session().get(url, timeout=self.timeout, allow_redirects=True)
@@ -79,7 +123,12 @@ class Fetcher:
                 time.sleep(2 ** attempt)
                 continue
             if response.status_code == 403 and _cloudflare_blocked(response):
+                last_error = RuntimeError("HTTP 403")
+                if not serial:
+                    self._reset_browser()
+                    raise _CloudflareBlock()
                 self._rotate_browser()
+                time.sleep(1 + attempt)
                 continue
             if response.status_code in {429, 500, 502, 503, 504}:
                 last_error = RuntimeError(f"HTTP {response.status_code}")
@@ -114,6 +163,10 @@ class Fetcher:
 
     def bytes(self, url: str) -> bytes:
         return self.get(url).content
+
+
+class _CloudflareBlock(Exception):
+    pass
 
 
 def _cloudflare_blocked(response) -> bool:
