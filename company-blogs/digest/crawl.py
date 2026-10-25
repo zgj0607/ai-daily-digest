@@ -5,7 +5,7 @@ import gzip
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Queue
 from urllib.parse import urljoin, urlparse
@@ -183,6 +183,7 @@ def run(
     progress = _Progress(view)
 
     reports = {s.id: SourceReport(s.id, s.name, 0, 0, 0) for s in sources}
+    sources_by_id = {s.id: s for s in settings.sources}
     translate_q: Queue[SavedArticle | object] = Queue()
     translated_lock = threading.Lock()
     translated_ok = 0
@@ -197,7 +198,7 @@ def run(
                     return
                 assert isinstance(item, SavedArticle)
                 try:
-                    _translate_saved(item, translator, state)
+                    _translate_saved(item, translator, state, settings, fetcher, sources_by_id)
                     with translated_lock:
                         translated_ok += 1
                     board.log_translate(f"[{item.source_id}] 已翻译 {item.filepath.name}")
@@ -402,11 +403,42 @@ def _crawl_article(
         return False, str(exc), None
 
 
-def _translate_saved(article: SavedArticle, translator: Translator, state: State) -> None:
+def _recrawl_missing(
+    article: SavedArticle,
+    settings: Settings,
+    state: State,
+    fetcher: Fetcher,
+    sources: dict[str, Source],
+) -> SavedArticle:
+    """原文文件已不在时，按记录中的公司目录和原文地址重新爬取。"""
+    if not article.url:
+        raise RuntimeError(f"文件不存在且没有原文地址: {article.filepath}")
+    company = article.filepath.parent.name or article.source_id
+    known = sources.get(article.source_id)
+    source = replace(known, name=company) if known else Source(article.source_id, company, re.compile(".*"))
+    row = ArticleRow(article.source_id, article.url, article.title, "", "", "saved", 0, "", "")
+    ok, message, saved = _crawl_article(settings, state, fetcher, source, row)
+    if not ok or saved is None:
+        raise RuntimeError(message or "重新爬取失败")
+    return saved
+
+
+def _translate_saved(
+    article: SavedArticle,
+    translator: Translator,
+    state: State,
+    settings: Settings,
+    fetcher: Fetcher,
+    sources: dict[str, Source],
+) -> None:
     """读取已落盘的 Obsidian 文件，双语翻译后写回，并把文件名改成中文标题。"""
     path = article.filepath
     if not path.is_file():
-        raise RuntimeError(f"文件不存在: {path}")
+        board.log_translate(f"[{article.source_id}] 原文不存在，重新爬取 {path.parent.name}/{article.url}")
+        refetched = _recrawl_missing(article, settings, state, fetcher, sources)
+        article.title = refetched.title
+        article.filepath = refetched.filepath
+        path = article.filepath
     body = read_markdown_body(path)
     title_zh = article.title
     if len(body) < 40:
