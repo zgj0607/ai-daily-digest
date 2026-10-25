@@ -5,8 +5,6 @@ import threading
 import time
 from urllib.parse import urljoin
 
-import requests
-
 # OpenRouter 等站点对短链接返回 200 + meta refresh，而不是 HTTP 重定向。
 _META_REFRESH = re.compile(
     r"""<meta\b[^>]*http-equiv=["']refresh["'][^>]*content=["'][^"']*?url=([^"'\s>]+)""",
@@ -19,7 +17,7 @@ _META_REFRESH_REV = re.compile(
 
 
 class Fetcher:
-    """全局限速 + 每线程独立 Session（避免共享 Session 的线程安全问题）。"""
+    """全局限速 + 每线程独立 Session。请求使用浏览器指纹，避免站点按爬虫拦截。"""
 
     def __init__(self, user_agent: str, interval_seconds: float) -> None:
         self.interval_seconds = interval_seconds
@@ -28,7 +26,7 @@ class Fetcher:
         self._last_request = 0.0
         self._rate_lock = threading.Lock()
         self._local = threading.local()
-        self._sessions: list[requests.Session] = []
+        self._sessions: list = []
         self._sessions_lock = threading.Lock()
 
     def close(self) -> None:
@@ -37,16 +35,12 @@ class Fetcher:
                 session.close()
             self._sessions.clear()
 
-    def _session(self) -> requests.Session:
+    def _session(self):
         session = getattr(self._local, "session", None)
         if session is None:
-            session = requests.Session()
-            session.headers.update(
-                {
-                    "User-Agent": self.user_agent,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                }
-            )
+            from curl_cffi import requests as browser_requests
+
+            session = browser_requests.Session(impersonate="chrome")
             self._local.session = session
             with self._sessions_lock:
                 self._sessions.append(session)
@@ -60,13 +54,13 @@ class Fetcher:
                 time.sleep(self.interval_seconds - elapsed)
             self._last_request = time.monotonic()
 
-    def get(self, url: str) -> requests.Response:
+    def get(self, url: str):
         last_error: Exception | None = None
         for attempt in range(3):
             self._rate_limit()
             try:
                 response = self._session().get(url, timeout=self.timeout, allow_redirects=True)
-            except requests.RequestException as exc:
+            except OSError as exc:
                 last_error = exc
                 time.sleep(2 ** attempt)
                 continue
@@ -77,7 +71,7 @@ class Fetcher:
             try:
                 response.raise_for_status()
                 return response
-            except requests.RequestException as exc:
+            except OSError as exc:
                 last_error = exc
                 time.sleep(2 ** attempt)
         raise RuntimeError(f"抓取失败 {url}: {last_error}")
@@ -93,7 +87,7 @@ class Fetcher:
         for _ in range(hops + 1):
             response = self.get(current)
             if not response.encoding or response.encoding.lower() == "iso-8859-1":
-                response.encoding = response.apparent_encoding or "utf-8"
+                response.encoding = getattr(response, "apparent_encoding", None) or "utf-8"
             html = response.text
             target = _html_redirect(html, response.url or current)
             if not target or target.rstrip("/") == current.rstrip("/"):

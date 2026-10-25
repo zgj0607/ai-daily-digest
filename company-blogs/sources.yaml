@@ -621,3 +621,38 @@ sources:
     index_url: https://www.parloa.com/blog/
     sitemap_url: https://www.parloa.com/sitemap.xml
     include: '^https://www.parloa.com/blog/[^/]+$'
+
+  - id: block
+    name: Block
+    enabled: true
+    # 栏目在 /news、/news/technology、trust-and-safety、purpose、press，文章在 /inside/slug。
+    index_url: https://block.xyz/news
+    sitemap_url: https://block.xyz/sitemap.xml
+    include: '^https://block.xyz/inside/[^/]+$'
+
+  - id: sequoia
+    name: Sequoia
+    enabled: true
+    # 列表在 /blog，文章是 /年/月/slug。不含活动、报告、视频、客户案例。
+    index_url: https://www.sequoia.com/blog/
+    sitemap_url: https://www.sequoia.com/sitemap.xml
+    include: '^https://www\.sequoia\.com/\d{4}/\d{2}/[^/]+$'
+
+  - id: ycombinator
+    name: Y Combinator
+    enabled: true
+    # 文章在 /blog/slug。默认列表只有 10 篇，limit=100 后按页码翻页。不含 Jobs、Startup School 栏目和 feed。
+    index_url: https://www.ycombinator.com/blog?limit=100
+    include: '^https://www\.ycombinator\.com/blog/[^/]+$'
+    exclude:
+      - '^https://www\.ycombinator\.com/blog/(?:feed|rss|posts\.atom|jobs|startup-school|ycc)$'
+
+  - id: a16z
+    name: a16z
+    enabled: true
+    # 列表在 /news-content。文章在根路径，投资新闻在 /announcement，播客在 /podcast。不含栏目页和译本。
+    index_url: https://a16z.com/news-content/
+    sitemap_url: https://a16z.com/sitemap_index.xml
+    include: '^https://a16z.com/(?:[^/]+|(?:announcement|podcast)/[^/]+)$'
+    exclude:
+      - '^https://a16z.com/(?:about|ad-film-series|ai|aiart|airevolution|a16z-podcast-x-tech-week-giveaway-official-rules|american-dynamism|american-dynamism-50-2025|american-dynamism-50-ai|american-dynamism-summit|american-dynamism-summit-2022-videos|apps-unwrapped|banking-on-ai|big-ideas-in-tech-2024|big-ideas-in-tech-2025|bio-health|books|clf|college-talent|consumer|defense-reform|digital-health-builders|disclosures|enterprise|executive-hiring|fintech|global|global-payments|growth|healthcare-meets-fintech|infra|new-media|news-content|newsletters|offices|perennial|podcasts|portfolio|pricing-packaging|privacy-policy|sitemap|speedrun|strategic-partnerships|team|terms-of-use|will-shrank|wp-json)$'

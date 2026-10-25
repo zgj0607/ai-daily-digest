@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import gzip
+import html as html_lib
+import json
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Queue
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
 from bs4 import BeautifulSoup
@@ -561,13 +563,30 @@ def _card_date(anchor) -> str:
 
 def _next_index(html: str, page_url: str) -> str:
     match = _NEXT_HREF.search(html)
+    if match:
+        href = urljoin(page_url, (match.group(1) or match.group(2)).strip())
+        same_path = urlparse(href).path.rstrip("/") == urlparse(page_url).path.rstrip("/")
+        if same_path and "page=" in urlparse(href).query:
+            return href
+    return _inertia_next(html, page_url)
+
+
+def _inertia_next(html: str, page_url: str) -> str:
+    """下一页页码在 data-page 里，页面上的 Next 没有 href。"""
+    match = re.search(r'data-page="([^"]+)"', html)
     if not match:
         return ""
-    href = urljoin(page_url, (match.group(1) or match.group(2)).strip())
-    same_path = urlparse(href).path.rstrip("/") == urlparse(page_url).path.rstrip("/")
-    if not same_path or "page=" not in urlparse(href).query:
+    try:
+        data = json.loads(html_lib.unescape(match.group(1)))
+    except json.JSONDecodeError:
         return ""
-    return href
+    nxt = ((data.get("props") or {}).get("pagination") or {}).get("next")
+    if not isinstance(nxt, int) or nxt < 2:
+        return ""
+    parts = urlsplit(page_url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["page"] = str(nxt)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
 
 def _article_url(url: str) -> bool:
