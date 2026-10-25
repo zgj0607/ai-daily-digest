@@ -182,6 +182,9 @@ def _short_bits(node) -> list[str]:
     text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
     if text and len(text) <= 48:
         return [text]
+    # 纯文本节点有 get_text，没有 find_all。
+    if not getattr(node, "name", None):
+        return []
     bits: list[str] = []
     for child in list(node.find_all(True, recursive=False))[:6]:
         bit = re.sub(r"\s+", " ", child.get_text(" ", strip=True))

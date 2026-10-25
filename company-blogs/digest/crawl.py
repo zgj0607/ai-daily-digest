@@ -251,7 +251,9 @@ def run(
             if reports[source.id].error:
                 continue
             for row in state.pending(source.id, settings.max_attempts, limit):
-                if source.accepts(row.url):
+                if not _article_url(row.url):
+                    state.skip(source.id, row.url, "不是文章链接")
+                elif source.accepts(row.url):
                     jobs.append((source, row))
                 else:
                     state.skip(source.id, row.url, "短链接仅为重定向，改抓规范地址")
@@ -432,27 +434,30 @@ def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
             for url, title, published in perplexity.posts(fetcher)
         }
     items: dict[str, _Item] = {}
+
+    def accept(raw: str) -> str:
+        url = _normalize(raw)
+        return url if _article_url(url) and source.accepts(url) else ""
+
     if source.sitemap_url:
         for url, lastmod in _sitemap_urls(fetcher, source.sitemap_url, 0):
-            url = _normalize(url)
-            if source.accepts(url):
+            if url := accept(url):
                 items[url] = _Item(url=url, lastmod=to_iso(parse_date(lastmod)) if lastmod else "")
     if source.index_url:
         index_path = urlparse(source.index_url).path.rstrip("/")
         links, dated = _index_links(fetcher, source.index_url)
         for url in links:
-            url = _normalize(url)
-            if urlparse(url).path.rstrip("/") == index_path:
+            url = accept(url)
+            if not url or urlparse(url).path.rstrip("/") == index_path:
                 continue
             published = dated.get(url, "")
-            if source.accepts(url) and url not in items:
+            if url not in items:
                 items[url] = _Item(url=url, published=published, hint_kind="index")
-            elif published and url in items and not items[url].published:
+            elif published and not items[url].published:
                 items[url].published = published
     if source.feed_url:
         for url, title, published in _feed_entries(fetcher.bytes(source.feed_url)):
-            url = _normalize(url)
-            if not source.accepts(url):
+            if not (url := accept(url)):
                 continue
             item = items.get(url) or _Item(url=url)
             item.title = title or item.title
@@ -533,6 +538,12 @@ def _next_index(html: str, page_url: str) -> str:
     return href
 
 
+def _article_url(url: str) -> bool:
+    """丢掉 javascript:void(0) 这类被拼进博客域名的假链接。"""
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and "javascript" not in url.lower()
+
+
 def _normalize(url: str) -> str:
     url = url.strip().split("#", 1)[0]
     if url.endswith("/") and url.count("/") > 3:
@@ -554,7 +565,13 @@ def _child_text(node: ET.Element, name: str) -> str:
 def _sitemap_urls(fetcher: Fetcher, url: str, depth: int) -> list[tuple[str, str]]:
     if depth > 3:
         return []
-    root = ET.fromstring(_strip_bom(fetcher.bytes(url)))
+    try:
+        root = ET.fromstring(_strip_bom(fetcher.bytes(url)))
+    except (ET.ParseError, RuntimeError) as exc:
+        if depth == 0:
+            raise
+        print(f"[digest] 跳过无法解析的 sitemap {url}: {exc}")
+        return []
     if _local(root.tag) == "sitemapindex":
         found: list[tuple[str, str]] = []
         for node in root:
