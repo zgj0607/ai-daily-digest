@@ -632,9 +632,8 @@ sources:
   - id: sequoia
     name: Sequoia
     enabled: true
-    # 列表在 /blog，文章是 /年/月/slug。不含活动、报告、视频、客户案例。
+    # 文章页会被 Cloudflare 403。列表和正文走 WordPress 接口，文章地址仍是 /年/月/slug。
     index_url: https://www.sequoia.com/blog/
-    sitemap_url: https://www.sequoia.com/sitemap.xml
     include: '^https://www\.sequoia\.com/\d{4}/\d{2}/[^/]+$'
 
   - id: ycombinator

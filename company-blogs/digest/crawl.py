@@ -25,7 +25,7 @@ from digest.content import (
 )
 from digest.dates import parse_date, to_iso
 from digest.http import Fetcher
-from digest import perplexity
+from digest import perplexity, sequoia
 from digest.state import ArticleRow, State
 from digest.translate import Translator, configure_llm_concurrency
 from digest.ui import board
@@ -373,6 +373,8 @@ def _crawl_article(
     try:
         article = perplexity.article(fetcher, row.url)
         if article is None:
+            article = sequoia.article(fetcher, row.url)
+        if article is None:
             html, page_url = fetcher.text_resolved(row.url)
             article = extract_article(html, page_url, row.published, row.hint_kind)
         else:
@@ -460,10 +462,11 @@ def _translate_saved(
 
 
 def _discover(source: Source, fetcher: Fetcher) -> dict[str, _Item]:
-    if perplexity.is_blog(source.index_url):
+    if perplexity.is_blog(source.index_url) or sequoia.is_blog(source.index_url):
+        listing = sequoia.posts(fetcher) if sequoia.is_blog(source.index_url) else perplexity.posts(fetcher)
         return {
             url: _Item(url=url, title=title, published=to_iso(parse_date(published)) if published else "", hint_kind="page")
-            for url, title, published in perplexity.posts(fetcher)
+            for url, title, published in listing
         }
     items: dict[str, _Item] = {}
 
