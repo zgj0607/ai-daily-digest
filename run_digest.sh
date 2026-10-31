@@ -15,7 +15,7 @@ PIPELINE_DIR="${PIPELINE_DIR:-$HOME/Documents/PycharmProject/Video-Article-Gener
 DIGEST_DIR="/Users/zhou/Documents/PycharmProject/ai-daily-digest"
 UBUNTU_HOST="${AI_UBUNTU_HOST:-192.168.110.38}"
 
-# 云端千问读 OPENAI_*。交互式 shell 没带上时，从 ~/.zshrc 补齐。
+# 云端千问读 OPENAI_*，七牛云读 QINIUYUN_*。交互式 shell 没带上时，从 ~/.zshrc 补齐。
 _zshrc_assign() {
   local name="$1" line
   [ -f "$HOME/.zshrc" ] || return 0
@@ -26,21 +26,31 @@ _zshrc_assign() {
 [ -n "${OPENAI_API_KEY:-}" ] || OPENAI_API_KEY="$(_zshrc_assign OPENAI_API_KEY)"
 [ -n "${OPENAI_API_BASE:-}" ] || OPENAI_API_BASE="$(_zshrc_assign OPENAI_API_BASE)"
 [ -n "${OPENAI_MODEL:-}" ] || OPENAI_MODEL="$(_zshrc_assign OPENAI_MODEL)"
+[ -n "${QINIUYUN_API_KEY:-}" ] || QINIUYUN_API_KEY="$(_zshrc_assign QINIUYUN_API_KEY)"
+[ -n "${QINIUYUN_API_BASE:-}" ] || QINIUYUN_API_BASE="$(_zshrc_assign QINIUYUN_API_BASE)"
+[ -n "${QINIUYUN_MODEL:-}" ] || QINIUYUN_MODEL="$(_zshrc_assign QINIUYUN_MODEL)"
 export OPENAI_API_KEY OPENAI_API_BASE OPENAI_MODEL
+export QINIUYUN_API_KEY QINIUYUN_API_BASE QINIUYUN_MODEL
 _cloud_key="$OPENAI_API_KEY"
 _cloud_base="$OPENAI_API_BASE"
 _cloud_model="$OPENAI_MODEL"
+_qiniu_key="$QINIUYUN_API_KEY"
+_qiniu_base="$QINIUYUN_API_BASE"
+_qiniu_model="$QINIUYUN_MODEL"
 
 if [ -f "$PIPELINE_DIR/mac/.env" ]; then
   # shellcheck disable=SC1091
   set -a; source "$PIPELINE_DIR/mac/.env"; set +a
   KEY=$(grep '^LITELLM_MASTER_KEY=' "$PIPELINE_DIR/mac/.env" | cut -d= -f2- || true)
 fi
-# mac/.env 里的 OPENAI_API_KEY 是本地 LiteLLM，云端配置以启动前的 OPENAI_* 为准
+# mac/.env 里的 OPENAI_API_KEY 是本地 LiteLLM，云端配置以启动前的 OPENAI_* / QINIUYUN_* 为准
 [ -n "$_cloud_key" ] && export OPENAI_API_KEY="$_cloud_key"
 [ -n "$_cloud_base" ] && export OPENAI_API_BASE="$_cloud_base"
 [ -n "$_cloud_model" ] && export OPENAI_MODEL="$_cloud_model"
-unset _cloud_key _cloud_base _cloud_model
+[ -n "$_qiniu_key" ] && export QINIUYUN_API_KEY="$_qiniu_key"
+[ -n "$_qiniu_base" ] && export QINIUYUN_API_BASE="$_qiniu_base"
+[ -n "$_qiniu_model" ] && export QINIUYUN_MODEL="$_qiniu_model"
+unset _cloud_key _cloud_base _cloud_model _qiniu_key _qiniu_base _qiniu_model
 
 # 本地模型单独配置，不覆盖上面的云端 OPENAI_*
 export LOCAL_LLM_MODEL="qwen3.6-27b"
@@ -56,6 +66,9 @@ export LOCAL_LLM_API_BASE="http://${UBUNTU_HOST}:8000/v1"
 _channels="本地 ${LOCAL_LLM_MODEL}"
 if [ -n "${OPENAI_API_KEY:-}" ] && [ -n "${OPENAI_API_BASE:-}" ]; then
   _channels="${_channels} + 云端 ${OPENAI_MODEL:-qwen} (${OPENAI_API_BASE})"
+fi
+if [ -n "${QINIUYUN_API_KEY:-}" ] && [ -n "${QINIUYUN_API_BASE:-}" ] && [ -n "${QINIUYUN_MODEL:-}" ]; then
+  _channels="${_channels} + 七牛云 ${QINIUYUN_MODEL} (${QINIUYUN_API_BASE})"
 fi
 echo "[digest] 翻译通道: ${_channels}"
 unset _channels

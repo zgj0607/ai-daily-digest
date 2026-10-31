@@ -20,4 +20,4 @@ python3 -m digest clippings   # 扫描日报剪藏，英文标题和未译正文
 
 `bash run_digest.sh --titles` 会先启动 Ubuntu 上的本地模型，扫完标题后再关机。
 
-站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。`llm_concurrency` 是每个翻译模型各自的并发。翻译同时使用本地 `LOCAL_LLM_*` 和 Coding Plan 云端千问。本地并发看 `llm_concurrency`，上下文 8096 token，按段落切开后再译。云端一篇一次请求，并发从 8 路加到最多 20 路；平台拒绝并发时只降速重试。这样避免把 Coding Plan 每 5 小时 6000 次请求打在分段往返上。5 小时或周/月额度用尽才关闭该模型。标题并进该模型的第一次请求。全部失败再用 `GEMINI_API_KEY`。
+站点与并行参数在 `sources.yaml`（`source_concurrency` / `article_concurrency` / `llm_concurrency`）。`llm_concurrency` 是每个翻译模型各自的并发。翻译同时使用本地 `LOCAL_LLM_*`、Coding Plan 云端千问（`OPENAI_*`）和七牛云（`QINIUYUN_API_KEY` / `QINIUYUN_API_BASE` / `QINIUYUN_MODEL`）。本地并发看 `llm_concurrency`，上下文 8096 token，按段落切开后再译。云端一篇一次请求，并发从 8 路加到最多 20 路；平台拒绝并发时只降速重试。这样避免把 Coding Plan 每 5 小时 6000 次请求打在分段往返上。5 小时或周/月额度用尽才关闭该模型。标题并进该模型的第一次请求。全部失败再用 `GEMINI_API_KEY`。

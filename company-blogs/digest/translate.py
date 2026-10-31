@@ -168,6 +168,9 @@ def _build_client():
     cloud_key = os.environ.get("OPENAI_API_KEY", "").strip()
     cloud_base = os.environ.get("OPENAI_API_BASE", "").strip().rstrip("/")
     cloud_model = os.environ.get("OPENAI_MODEL", "").strip()
+    qiniu_key = os.environ.get("QINIUYUN_API_KEY", "").strip()
+    qiniu_base = os.environ.get("QINIUYUN_API_BASE", "").strip().rstrip("/")
+    qiniu_model = os.environ.get("QINIUYUN_MODEL", "").strip()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
     # 本地按 llm_concurrency，并且先按 8096 token 切段。云端整篇一次请求。
@@ -190,6 +193,19 @@ def _build_client():
                 model or "qwen-plus",
                 max_tokens=16384,
                 extra={"enable_thinking": False},
+            ),
+            _CLOUD_CEILING,
+            "cloud",
+        ))
+    if qiniu_key and qiniu_base and qiniu_model and qiniu_base != local_base:
+        pool.append((
+            f"七牛云 ({qiniu_base}, model={qiniu_model})",
+            lambda prompt, key=qiniu_key, base=qiniu_base, model=qiniu_model: _call_openai(
+                prompt,
+                key,
+                base,
+                model,
+                max_tokens=16384,
             ),
             _CLOUD_CEILING,
             "cloud",
